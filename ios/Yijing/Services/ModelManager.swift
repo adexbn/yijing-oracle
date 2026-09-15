@@ -3,9 +3,9 @@ import Foundation
 /// 本地小模型（GGUF）的下载与文件管理。模型不随 App 打包，安装后按需下载或本地导入。
 enum ModelManager {
 
-    static let modelFile = "qwen3-1.7b-q4_k_m.gguf"
-    static let modelURL = "https://huggingface.co/lmstudio-community/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf"
-    static let modelURLMirror = "https://hf-mirror.com/lmstudio-community/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf"
+    static let modelFile = "qwen2.5-1.5b-instruct-q4_k_m.gguf"
+    static let modelURL = "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf"
+    static let modelURLMirror = "https://hf-mirror.com/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf"
 
     /// 下载源顺序：国内镜像优先，原版兜底。
     static let sources = [modelURLMirror, modelURL]
