@@ -86,11 +86,24 @@ private func llamaLogCallback(level: ggml_log_level, text: UnsafePointer<CChar>?
     YjLog.log("[llama] " + message)
 }
 
+/// ggml 致命错误回调：GGML_ASSERT 断言失败时，ggml_abort 默认只 fprintf(stderr)，并不走
+/// llama_log_set 的日志回调（这正是之前崩溃日志里看不到断言原文的原因）。用
+/// ggml_set_abort_callback 把致命错误也接到文件日志，下次再崩就能看到类似
+/// "llama-context.cpp:1722: GGML_ASSERT(n_tokens_all <= cparams.n_batch) failed" 的原文。
+/// 必须是顶层函数（不能捕获上下文），才能被转换成 C 函数指针传给 ggml_set_abort_callback。
+private func ggmlAbortCallback(_ errorMessage: UnsafePointer<CChar>?) {
+    let msg = errorMessage.map { String(cString: $0) } ?? "(空消息)"
+    YjLog.log("[GGML_ABORT] " + msg)
+}
+
 enum LlamaCPP {
 
     static func complete(modelPath: String, system: String, user: String, maxTokens: Int32 = 1024) throws -> String {
         // 先把 llama.cpp 的日志接到文件日志，加载失败时能拿到底层原因。
         llama_log_set(llamaLogCallback, nil)
+        // GGML_ASSERT 断言失败时走 ggml_abort，默认只 fprintf(stderr) 不进 llama 日志回调；
+        // 注册 abort 回调把它也落到文件日志，崩溃时能看到断言原文（如 n_batch 越界）。
+        ggml_set_abort_callback(ggmlAbortCallback)
         YjLog.log("========== complete() 开始 ==========")
         YjLog.log("modelPath=\(modelPath)")
 
@@ -158,15 +171,32 @@ enum LlamaCPP {
         let smpl = llama_sampler_init_greedy()
         defer { llama_sampler_free(smpl) }
 
-        var batch = tokens.withUnsafeBufferPointer { buf in
-            llama_batch_get_one(UnsafeMutablePointer(mutating: buf.baseAddress), Int32(buf.count))
+        // 分批喂入 prompt：llama_decode 单次最多处理 n_batch（本例 256）个 token。
+        // 本例 prompt 分词后有 273 个 token，一次性全量喂入会触发
+        // llama-context.cpp 的 GGML_ASSERT(n_tokens_all <= cparams.n_batch) 直接 abort
+        //（正是之前「STEP 6: 首次 llama_decode 前」之后无任何日志、静默崩溃的根因）。
+        // 改为每批 <= n_batch 切分逐批 decode；llama_batch_get_one 的 pos 为 NULL，
+        // llama_decode 会自动递增 token 位置，跨批正确衔接。
+        let nBatch = Int(cparams.n_batch)
+        var batch = llama_batch()
+        var promptPos = 0
+        while promptPos < tokens.count {
+            let chunkCount = min(nBatch, tokens.count - promptPos)
+            var decodeResult: Int32 = -1
+            tokens.withUnsafeBufferPointer { buf in
+                guard let base = buf.baseAddress else { return }
+                let ptr = UnsafeMutablePointer(mutating: base.advanced(by: promptPos))
+                batch = llama_batch_get_one(ptr, Int32(chunkCount))
+                decodeResult = llama_decode(ctx, batch)
+            }
+            YjLog.log("STEP 6: decode prompt 第 \(promptPos / nBatch + 1) 批（\(chunkCount) tokens）")
+            if decodeResult != 0 {
+                YjLog.log("STEP 6 失败：prompt 分批 decode 返回非 0（已处理 \(promptPos)/\(tokens.count) tokens）")
+                throw LlamaError.contextFailed
+            }
+            promptPos += chunkCount
         }
-        YjLog.log("STEP 6: 首次 llama_decode 前")
-        if llama_decode(ctx, batch) != 0 {
-            YjLog.log("STEP 6 失败：首次 decode 返回非 0")
-            throw LlamaError.contextFailed
-        }
-        YjLog.log("STEP 6: 首次 decode OK")
+        YjLog.log("STEP 6: prompt decode OK（共 \(tokens.count) tokens）")
 
         var decoded = Data()
         var piece = [CChar](repeating: 0, count: 256)
