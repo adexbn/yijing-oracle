@@ -49,20 +49,38 @@ jobs:
             CODE_SIGN_ENTITLEMENTS="" \
             archive
 
-      - name: 导出未签名 IPA
+      - name: 导出 IPA 目录结构
         run: |
           mkdir -p build/ipa
           cp -R build/Yijing.xcarchive/Products/Applications/Yijing.app build/ipa/
           cd build/ipa
           mkdir -p Payload
           mv Yijing.app Payload/
-          zip -qry Yijing-unsigned.ipa Payload
+
+      # ad-hoc 签名：把代码签名段（LC_CODE_SIGNATURE / _CodeSignature）补回二进制。
+      # 原因：CODE_SIGNING_ALLOWED=NO 编出来的 Mach-O 完全没有签名段，
+      #       Sideloadly / AltStore 重签时会直接报
+      #       "Guru Meditation ... Invalid file"。这里先用本机自签（-）占住签名槽位，
+      #       重签工具会把它整个替换成你 Apple ID 的签名。
+      - name: Ad-hoc 签名（补齐代码签名段）
+        run: |
+          cd build/ipa
+          codesign --force --sign - --timestamp=none --deep Payload/Yijing.app \
+            || codesign --force --sign - --timestamp=none Payload/Yijing.app
+          echo "── 签名段检查 ──"
+          codesign -dvvv Payload/Yijing.app || true
+          codesign --verify --verbose=2 Payload/Yijing.app || true
+
+      - name: 打包 IPA
+        run: |
+          cd build/ipa
+          zip -qry -X Yijing-adhoc.ipa Payload
 
       - name: 上传 IPA 产物
         uses: actions/upload-artifact@v4
         with:
-          name: Yijing-unsigned-ipa
-          path: ios/build/ipa/Yijing-unsigned.ipa
+          name: Yijing-adhoc-ipa
+          path: ios/build/ipa/Yijing-adhoc.ipa
           retention-days: 14
 
       # ── 以下为可选：配置了签名 secrets 后，归档并上传 TestFlight ──
