@@ -48,10 +48,14 @@ enum LlamaCPP {
             throw LlamaError.modelLoadFailed
         }
         defer { llama_free_model(model) }
+        NSLog("[yijing] model loaded OK")
 
+        // 内存优化：Qwen3-1.7B 的 KV cache 较大（8 个 KV head），n_ctx=4096 会占用约 450MB KV cache，
+        // 加上 1.2GB 模型权重容易触发 iOS Jetsam 闪退。解卦场景 prompt+输出通常 < 1000 token，
+        // 降到 2048 可让 KV cache 减半；n_batch 同步调小以降低峰值内存。
         var cparams = llama_context_default_params()
-        cparams.n_ctx = 4096
-        cparams.n_batch = 512
+        cparams.n_ctx = 2048
+        cparams.n_batch = 256
         let threads = Int32(max(1, ProcessInfo.processInfo.activeProcessorCount / 2))
         cparams.n_threads = threads
         cparams.n_threads_batch = threads
@@ -60,6 +64,7 @@ enum LlamaCPP {
             throw LlamaError.contextFailed
         }
         defer { llama_free(ctx) }
+        NSLog("[yijing] context created: n_ctx=%d n_batch=%d n_gpu_layers=%d", cparams.n_ctx, cparams.n_batch, mparams.n_gpu_layers)
 
         let prompt = system + "\n\n" + user
         let tokens = try tokenize(model, text: prompt)
@@ -75,6 +80,7 @@ enum LlamaCPP {
         if llama_decode(ctx, batch) != 0 {
             throw LlamaError.contextFailed
         }
+        NSLog("[yijing] first decode OK, tokens=%d", tokens.count)
 
         var decoded = Data()
         var piece = [CChar](repeating: 0, count: 256)
