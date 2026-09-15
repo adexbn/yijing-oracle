@@ -26,10 +26,13 @@ enum LocalAiClient {
         return (SYSTEM, user)
     }
 
-    /// 使用本地模型生成解读。模型未下载时抛出带提示的异常。
+    /// 使用本地模型生成解读。模型未下载或不完整时抛出带提示的异常。
     static func generate(system: String, user: String) async throws -> String {
-        guard ModelManager.isDownloaded() else {
+        guard let size = ModelManager.modelFileSize() else {
             throw ModelManager.ApiError("本地模型尚未下载，请先到「设置」页下载模型（约 1.2GB）")
+        }
+        guard size > ModelManager.minModelBytes else {
+            throw ModelManager.ApiError("本地模型文件不完整（当前 \(ModelManager.formatSize(size))，应约 1.2GB），请到「设置」页重新下载或导入")
         }
         let path = ModelManager.modelFileURL().path
         // 推理耗时，放到后台线程执行，避免阻塞 UI。

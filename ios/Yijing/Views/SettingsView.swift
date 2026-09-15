@@ -196,10 +196,11 @@ struct SettingsView: View {
 
     private var modelStatusText: String {
         if downloading { return "下载中 \(progress)%" }
-        if downloaded {
-            let url = ModelManager.modelFileURL()
-            let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value ?? 0
-            return "已下载 · \(ModelManager.formatSize(size))"
+        if let size = ModelManager.modelFileSize() {
+            if size > ModelManager.minModelBytes {
+                return "已就绪 · \(ModelManager.formatSize(size))"
+            }
+            return "文件不完整（当前 \(ModelManager.formatSize(size))，应约 1.2GB），请重新下载或导入"
         }
         return "未下载（约 1.2GB，建议在 Wi-Fi 下进行）"
     }

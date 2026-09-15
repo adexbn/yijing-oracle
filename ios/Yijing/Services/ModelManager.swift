@@ -7,6 +7,11 @@ enum ModelManager {
     static let modelURL = "https://huggingface.co/lmstudio-community/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf"
     static let modelURLMirror = "https://hf-mirror.com/lmstudio-community/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf"
 
+    /// 模型文件完整的最小字节数。Qwen3-1.7B Q4_K_M 约 1223MB。
+    /// 下载/导入中断会留下不完整文件，若不校验大小，llama.cpp 用 mmap 加载时
+    /// 访问越界会触发 SIGBUS 直接崩溃（而非可捕获的加载失败）。
+    static let minModelBytes: Int64 = 1100 * 1024 * 1024
+
     /// 下载源顺序：国内镜像优先，原版兜底。
     static let sources = [modelURLMirror, modelURL]
 
@@ -21,11 +26,16 @@ enum ModelManager {
         modelsDir.appendingPathComponent(modelFile)
     }
 
-    static func isDownloaded() -> Bool {
+    /// 返回模型文件的字节数，文件不存在返回 nil。
+    static func modelFileSize() -> Int64? {
         let f = modelFileURL()
         guard let attrs = try? FileManager.default.attributesOfItem(atPath: f.path),
-              let size = attrs[.size] as? Int64 else { return false }
-        return size > 100 * 1024 * 1024
+              let size = attrs[.size] as? Int64 else { return nil }
+        return size
+    }
+
+    static func isDownloaded() -> Bool {
+        (modelFileSize() ?? 0) > minModelBytes
     }
 
     static func delete() {
