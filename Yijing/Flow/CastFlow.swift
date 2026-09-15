@@ -69,9 +69,9 @@ final class CastFlow: ObservableObject {
                 do {
                     reply = try await AiClient.request(config: settings.config, system: system, user: user)
                     error = ""
-                } catch {
+                } catch let err {
                     reply = ""
-                    error = "大师解卦失败：\(error.localizedDescription)"
+                    error = "大师解卦失败：\(err.localizedDescription)"
                 }
                 finish()
             }
@@ -87,9 +87,9 @@ final class CastFlow: ObservableObject {
                 do {
                     reply = try await LocalAiClient.generate(system: system, user: user)
                     error = ""
-                } catch {
+                } catch let err {
                     reply = ""
-                    error = "解卦失败：\(error.localizedDescription)"
+                    error = "解卦失败：\(err.localizedDescription)"
                 }
                 finish()
             }

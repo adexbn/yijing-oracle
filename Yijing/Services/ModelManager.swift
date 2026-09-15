@@ -76,12 +76,22 @@ enum ModelManager {
         defer { try? handle.close() }
 
         var copied: Int64 = 0
+        var buffer = Data()
+        buffer.reserveCapacity(65536)
         for try await byte in bytes {
-            handle.write(byte)
+            buffer.append(byte)
             copied += 1
-            if total > 0 {
-                onProgress(Int(Double(copied) / Double(total) * 100))
+            if buffer.count >= 65536 {
+                try handle.write(contentsOf: buffer)
+                buffer.removeAll(keepingCapacity: true)
+                if total > 0 {
+                    onProgress(Int(Double(copied) / Double(total) * 100))
+                }
             }
+        }
+        if !buffer.isEmpty {
+            try handle.write(contentsOf: buffer)
+            if total > 0 { onProgress(100) }
         }
         try handle.close()
 

@@ -7,6 +7,14 @@ struct Hexagram: Hashable {
     let upper: Trigram
     let judgment: String
 
+    init(_ number: Int, _ name: String, _ lower: Trigram, _ upper: Trigram, _ judgment: String) {
+        self.number = number
+        self.name = name
+        self.lower = lower
+        self.upper = upper
+        self.judgment = judgment
+    }
+
     var symbol: String { upper.symbol + lower.symbol }
 
     /// 别名（卦象名）：纯卦为「离为火」，重卦为「火风鼎」式。

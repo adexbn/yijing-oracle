@@ -47,7 +47,7 @@ struct CompassView: View {
         let rr = r * 0.56
         for (i, s) in shan24.enumerated() {
             let a = rad(-90.0 + Double(i) * 15.0)
-            let p = CGPoint(x: cx + rr * cos(a), y: cy + rr * sin(a))
+            let p = CGPoint(x: cx + rr * CGFloat(cos(a)), y: cy + rr * CGFloat(sin(a)))
             text(s, at: p, size: 13, color: Theme.inkMuted, context: &context)
         }
     }
@@ -58,11 +58,11 @@ struct CompassView: View {
         for (i, tg) in ringTrigrams.enumerated() {
             let hot = tg == upper || tg == lower
             let a = rad(-90.0 + Double(i) * 45.0)
-            let sx = cx + r * 0.88 * cos(a)
-            let sy = cy + r * 0.88 * sin(a)
+            let sx = cx + r * 0.88 * CGFloat(cos(a))
+            let sy = cy + r * 0.88 * CGFloat(sin(a))
             text(tg.symbol, at: CGPoint(x: sx, y: sy), size: 18, color: hot ? Theme.gold : Theme.ink, context: &context)
-            let nx = cx + r * 0.72 * cos(a)
-            let ny = cy + r * 0.72 * sin(a)
+            let nx = cx + r * 0.72 * CGFloat(cos(a))
+            let ny = cy + r * 0.72 * CGFloat(sin(a))
             text(tg.label, at: CGPoint(x: nx, y: ny), size: 14, color: hot ? Theme.brand : Theme.inkMuted, context: &context)
         }
     }
@@ -89,7 +89,7 @@ struct CompassView: View {
     private func drawNeedle(cx: CGFloat, cy: CGFloat, r: CGFloat, deg: Double, context: inout GraphicsContext) {
         // 外圈小三角游标：尖端朝外，落在符号环与卦名环之间，不与环内文字重叠。
         let a = rad(-90.0 + deg)
-        let dx = cos(a), dy = sin(a)
+        let dx = CGFloat(cos(a)), dy = CGFloat(sin(a))
         let tipR = r * 0.90
         let tip = CGPoint(x: cx + tipR * dx, y: cy + tipR * dy)
         let baseR = r * 0.98
