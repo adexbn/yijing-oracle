@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@color/paper"
+    android:paddingHorizontal="20dp"
+    android:paddingTop="18dp"
+    android:paddingBottom="28dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="设定条件"
+        android:textColor="@color/ink"
+        android:textSize="16sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:text="轻点主章直接以当前时空起卦，或自选条件"
+        android:textColor="@color/ink_muted"
+        android:textSize="12sp" />
+
+    <TextView
+        android:id="@+id/sheet_time"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:background="@drawable/bg_card"
+        android:padding="16dp"
+        android:text="指定时间"
+        android:textColor="@color/ink"
+        android:textSize="15sp" />
+
+    <TextView
+        android:id="@+id/sheet_number"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:background="@drawable/bg_card"
+        android:padding="16dp"
+        android:text="指定数字"
+        android:textColor="@color/ink"
+        android:textSize="15sp" />
+
+    <TextView
+        android:id="@+id/sheet_direction"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:background="@drawable/bg_card"
+        android:padding="16dp"
+        android:text="指定方位"
+        android:textColor="@color/ink"
+        android:textSize="15sp" />
+</LinearLayout>

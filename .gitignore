@@ -1,26 +1,13 @@
-# XcodeGen 生成物（云端会重新生成）
-*.xcodeproj
-*.xcworkspace
-Yijing/Info.plist
-
-# Swift Package 解析产物
-.build/
-.build/
-Package.resolved
-
-# 构建产物
-build/
-DerivedData/
-*.xcarchive
-*.ipa
-*.dSYM.zip
-
-# macOS
+# 操作系统 / 编辑器
 .DS_Store
-
-# 凭证/密钥（防止本地临时凭证误提交）
-*.git-credentials
-
-# 编辑器
+Thumbs.db
 .vscode/
 .idea/
+
+# 凭证与密钥（防止本地临时凭证或签名文件误提交）
+*.git-credentials
+.git-credentials
+*.jks
+*.keystore
+*.p12
+*.mobileprovision

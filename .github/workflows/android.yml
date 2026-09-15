@@ -1,0 +1,41 @@
+name: Android Build
+
+on:
+  push:
+    paths:
+      - 'android/**'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: 安装 Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: 安装编译所需平台
+        run: sdkmanager "platforms;android-37"
+
+      # 编译验证：Debug APK 能产出即说明整套 Kotlin/资源/NDK 依赖可用
+      - name: 编译验证（assembleDebug）
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: 上传 APK 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: Yijing-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14

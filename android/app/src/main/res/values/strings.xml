@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">周易小卦</string>
+    <string name="tap_hint">轻点：当前时空　｜　长按：设定条件</string>
+    <string name="cast_now">一键起卦</string>
+    <string name="question_hint">默问即可，可不写…</string>
+</resources>

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:background="@color/paper"
+    android:paddingHorizontal="32dp">
+
+    <com.yijing.app.ui.BrushWritingView
+        android:id="@+id/loadingBrush"
+        android:layout_width="96dp"
+        android:layout_height="96dp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="30dp"
+        android:text="正在推演卦象…"
+        android:textColor="@color/ink"
+        android:textSize="18sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="心诚则灵，稍候片刻"
+        android:textColor="@color/ink_muted"
+        android:textSize="14sp" />
+</LinearLayout>

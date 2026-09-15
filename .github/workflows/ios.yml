@@ -2,11 +2,17 @@ name: iOS Build
 
 on:
   push:
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios.yml'
   workflow_dispatch:
 
 jobs:
   build-ios:
     runs-on: macos-15
+    defaults:
+      run:
+        working-directory: ios
     steps:
       - uses: actions/checkout@v4
 
@@ -26,6 +32,39 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build
 
+      # ── 以下为可选：配置了签名 secrets 后，归档并导出未签名 IPA ──
+      # 用于本机用 Sideloadly / AltStore 以自己的 Apple ID 自签安装（个人自用，无需 $99 账号）。
+      # 原理：用 CODE_SIGNING_ALLOWED=NO 归档出 .xcarchive，
+      #       再用手动签名方式导出为「未签名 IPA」，本机重签时即可用任意 Apple ID。
+
+      - name: 归档（不签名）
+        run: |
+          xcodebuild -project Yijing.xcodeproj \
+            -scheme Yijing \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/Yijing.xcarchive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_ENTITLEMENTS="" \
+            archive
+
+      - name: 导出未签名 IPA
+        run: |
+          mkdir -p build/ipa
+          cp -R build/Yijing.xcarchive/Products/Applications/Yijing.app build/ipa/
+          cd build/ipa
+          mkdir -p Payload
+          mv Yijing.app Payload/
+          zip -qry Yijing-unsigned.ipa Payload
+
+      - name: 上传 IPA 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: Yijing-unsigned-ipa
+          path: ios/build/ipa/Yijing-unsigned.ipa
+          retention-days: 14
+
       # ── 以下为可选：配置了签名 secrets 后，归档并上传 TestFlight ──
       # 需要仓库 Secrets：
       #   SIGNING_CERTIFICATE_BASE64      发行证书(.p12)的 base64
@@ -33,8 +72,8 @@ jobs:
       #   SIGNING_PROFILE_BASE64          描述文件(.mobileprovision)的 base64
       #   APP_STORE_CONNECT_ISSUER_ID / APP_STORE_CONNECT_KEY_IDENTIFIER / APP_STORE_CONNECT_PRIVATE_KEY
       #
-      # 说明：签名上 TestFlight 用 Codemagic 的「自动签名」更省事；
-      #       若坚持用 GitHub Actions，可取消下面步骤的注释并自行填 secrets。
+      # 说明：本项目自用安装走「未签名 IPA + 本机 Sideloadly 自签」，无需 $99 账号，
+      #       故下面这段保持注释；确有需要时再启用。
 
       # - name: 导入签名证书
       #   if: ${{ secrets.SIGNING_CERTIFICATE_BASE64 != '' }}
@@ -49,7 +88,7 @@ jobs:
       #     mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
       #     echo "${{ secrets.SIGNING_PROFILE_BASE64 }}" | base64 --decode > "$HOME/Library/MobileDevice/Provisioning Profiles/Yijing.mobileprovision"
 
-      # - name: 归档并导出 IPA
+      # - name: 归档并导出 IPA（签名）
       #   if: ${{ secrets.SIGNING_PROFILE_BASE64 != '' }}
       #   run: |
       #     xcodebuild -project Yijing.xcodeproj -scheme Yijing -configuration Release \

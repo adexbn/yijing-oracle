@@ -1,0 +1,10 @@
+<resources>
+    <color name="brand">#8A6D3B</color>
+    <color name="brand_dark">#6E552E</color>
+    <color name="ink">#201D17</color>
+    <color name="ink_muted">#837A69</color>
+    <color name="paper">#FBF8F2</color>
+    <color name="divider">#E4DED1</color>
+    <color name="cinnabar">#A63A2B</color>
+    <color name="cinnabar_dark">#7E2B20</color>
+</resources>
