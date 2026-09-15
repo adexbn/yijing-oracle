@@ -243,8 +243,8 @@ struct SettingsView: View {
             let accessing = url.startAccessingSecurityScopedResource()
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             do {
-                let data = try Data(contentsOf: url)
-                _ = try ModelManager.importFrom(data)
+                // 流式复制，避免 Data(contentsOf:) 把 1.2GB 整个读进内存导致 OOM
+                _ = try ModelManager.importFrom(fileURL: url)
                 downloaded = ModelManager.isDownloaded()
             } catch {
                 downloaded = ModelManager.isDownloaded()

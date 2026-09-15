@@ -34,10 +34,21 @@ enum ModelManager {
         try? FileManager.default.removeItem(at: f.appendingPathExtension("part"))
     }
 
-    /// 从本地流导入模型文件。
-    static func importFrom(_ input: Data) throws -> URL {
+    /// 从本地文件流式导入模型（避免一次性把 1.2GB 读进内存导致 OOM）。
+    /// 分块读取源文件并写入沙盒，内存占用控制在约 1MB。
+    static func importFrom(fileURL src: URL) throws -> URL {
         let dest = modelFileURL()
-        try input.write(to: dest)
+        try? FileManager.default.removeItem(at: dest)
+        let input = try FileHandle(forReadingFrom: src)
+        defer { try? input.close() }
+        FileManager.default.createFile(atPath: dest.path, contents: nil)
+        let output = try FileHandle(forWritingTo: dest)
+        defer { try? output.close() }
+        while true {
+            let chunk = input.readData(ofLength: 1024 * 1024)
+            if chunk.isEmpty { break }
+            try output.write(contentsOf: chunk)
+        }
         return dest
     }
 
