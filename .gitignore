@@ -1,0 +1,23 @@
+# XcodeGen 生成物（云端会重新生成）
+*.xcodeproj
+*.xcworkspace
+Yijing/Info.plist
+
+# Swift Package 解析产物
+.build/
+.build/
+Package.resolved
+
+# 构建产物
+build/
+DerivedData/
+*.xcarchive
+*.ipa
+*.dSYM.zip
+
+# macOS
+.DS_Store
+
+# 编辑器
+.vscode/
+.idea/

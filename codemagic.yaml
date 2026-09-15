@@ -1,0 +1,32 @@
+workflows:
+  build-ios:
+    name: 周易小卦 iOS 构建
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+    environment:
+      xcode: latest
+      groups:
+        - app_store_credentials
+    scripts:
+      - name: 安装 XcodeGen
+        script: brew install xcodegen
+      - name: 生成 Xcode 工程
+        script: xcodegen generate
+      - name: 自动代码签名
+        script: xcode-project use-profiles
+      - name: 归档构建
+        script: |
+          xcodebuild -project Yijing.xcodeproj \
+            -scheme Yijing \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/Yijing.xcarchive \
+            archive
+    artifacts:
+      - build/Yijing.xcarchive
+    publishing:
+      app_store_connect:
+        api_key: $APP_STORE_CONNECT_PRIVATE_KEY
+        key_id: $APP_STORE_CONNECT_KEY_IDENTIFIER
+        issuer_id: $APP_STORE_CONNECT_ISSUER_ID
+        submit_to_testflight: true

@@ -1,0 +1,67 @@
+name: iOS Build
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 XcodeGen
+        run: brew install xcodegen
+
+      - name: 生成 Xcode 工程
+        run: xcodegen generate
+
+      # 公开仓库免费即可运行的编译验证（不签名，仅确认代码能通过编译）
+      - name: 编译验证（不签名）
+        run: |
+          xcodebuild -project Yijing.xcodeproj \
+            -scheme Yijing \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      # ── 以下为可选：配置了签名 secrets 后，归档并上传 TestFlight ──
+      # 需要仓库 Secrets：
+      #   SIGNING_CERTIFICATE_BASE64      发行证书(.p12)的 base64
+      #   SIGNING_CERTIFICATE_PASSWORD    证书密码
+      #   SIGNING_PROFILE_BASE64          描述文件(.mobileprovision)的 base64
+      #   APP_STORE_CONNECT_ISSUER_ID / APP_STORE_CONNECT_KEY_IDENTIFIER / APP_STORE_CONNECT_PRIVATE_KEY
+      #
+      # 说明：签名上 TestFlight 用 Codemagic 的「自动签名」更省事；
+      #       若坚持用 GitHub Actions，可取消下面步骤的注释并自行填 secrets。
+
+      # - name: 导入签名证书
+      #   if: ${{ secrets.SIGNING_CERTIFICATE_BASE64 != '' }}
+      #   uses: Apple-actions/import-codesign-certs@v3
+      #   with:
+      #     p12-file-base64: ${{ secrets.SIGNING_CERTIFICATE_BASE64 }}
+      #     p12-password: ${{ secrets.SIGNING_CERTIFICATE_PASSWORD }}
+
+      # - name: 安装描述文件
+      #   if: ${{ secrets.SIGNING_PROFILE_BASE64 != '' }}
+      #   run: |
+      #     mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+      #     echo "${{ secrets.SIGNING_PROFILE_BASE64 }}" | base64 --decode > "$HOME/Library/MobileDevice/Provisioning Profiles/Yijing.mobileprovision"
+
+      # - name: 归档并导出 IPA
+      #   if: ${{ secrets.SIGNING_PROFILE_BASE64 != '' }}
+      #   run: |
+      #     xcodebuild -project Yijing.xcodeproj -scheme Yijing -configuration Release \
+      #       -destination 'generic/platform=iOS' -archivePath build/Yijing.xcarchive archive
+      #     xcodebuild -exportArchive -archivePath build/Yijing.xcarchive \
+      #       -exportOptionsPlist exportOptions.plist -exportPath build
+
+      # - name: 上传 TestFlight
+      #   if: ${{ secrets.SIGNING_PROFILE_BASE64 != '' }}
+      #   uses: Apple-actions/upload-testflight-build@v1
+      #   with:
+      #     app-path: build/Yijing.ipa
+      #     issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      #     api-key-id: ${{ secrets.APP_STORE_CONNECT_KEY_IDENTIFIER }}
+      #     api-private-key: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}

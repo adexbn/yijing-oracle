@@ -1,0 +1,46 @@
+name: Yijing
+options:
+  bundleIdPrefix: com.yijing
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+  xcodeVersion: "15.0"
+
+packages:
+  llama.cpp:
+    url: https://github.com/ggml-org/llama.cpp.git
+    branch: master
+  LunarSwift:
+    url: https://github.com/6tail/lunar-swift.git
+    from: 1.0.0
+
+targets:
+  Yijing:
+    type: application
+    platform: iOS
+    sources:
+      - path: Yijing
+    dependencies:
+      - package: llama.cpp
+        product: llama
+      - package: LunarSwift
+        product: LunarSwift
+    info:
+      path: Yijing/Info.plist
+      properties:
+        CFBundleDisplayName: 周易小卦
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        NSLocationWhenInUseUsageDescription: 用于计算真太阳时（东经），以准确确定起卦时辰
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.yijing.app
+        SWIFT_VERSION: "5.0"
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: ""
+        SUPPORTS_MACCATALYST: NO
