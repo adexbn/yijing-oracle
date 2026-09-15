@@ -43,7 +43,11 @@ enum LlamaCPP {
         defer { llama_backend_free() }
 
         var mparams = llama_model_default_params()
-        mparams.n_gpu_layers = 99
+        // 用纯 CPU 推理：b5092 崩 SIGBUS、b10809 崩 SIGABRT，两次都崩在 Metal GPU 后端
+        //（日志里有 16 秒 Metal 着色器编译 + Metal Warning 后直接 abort）。
+        // 说明该机型上 Metal offload 不稳定，改用 n_gpu_layers=0 让所有层走 CPU 后端，
+        // 更稳定，代价是推理变慢。
+        mparams.n_gpu_layers = 0
         // 禁用 mmap：不完整/损坏的模型文件用 mmap 加载时，访问越界会触发 SIGBUS 直接崩溃。
         // 改用普通读取后，文件问题会返回 nil（可捕获为「模型加载失败」），而非闪退。
         // b5092 及以后版本用 load_mode 取代 use_mmap 字段；NONE = 不启用 mmap。
