@@ -47,7 +47,7 @@ enum LlamaCPP {
         // 禁用 mmap：不完整/损坏的模型文件用 mmap 加载时，访问越界会触发 SIGBUS 直接崩溃。
         // 改用普通读取后，文件问题会返回 nil（可捕获为「模型加载失败」），而非闪退。
         // b5092 及以后版本用 load_mode 取代 use_mmap 字段；NONE = 不启用 mmap。
-        mparams.load_mode = llama_load_mode.LLAMA_LOAD_MODE_NONE
+        mparams.load_mode = LLAMA_LOAD_MODE_NONE
         guard let model = llama_model_load_from_file(modelPath, mparams) else {
             throw LlamaError.modelLoadFailed
         }
@@ -55,7 +55,9 @@ enum LlamaCPP {
         NSLog("[yijing] model loaded OK")
 
         // b5092 之后 token 相关接口改用 vocab 指针（而非 model 指针）。
-        let vocab = llama_model_get_vocab(model)
+        guard let vocab = llama_model_get_vocab(model) else {
+            throw LlamaError.modelLoadFailed
+        }
 
         // 内存优化：Qwen3-1.7B 的 KV cache 较大（8 个 KV head），n_ctx=4096 会占用约 450MB KV cache，
         // 加上 1.2GB 模型权重容易触发 iOS Jetsam 闪退。解卦场景 prompt+输出通常 < 1000 token，
@@ -71,7 +73,7 @@ enum LlamaCPP {
             throw LlamaError.contextFailed
         }
         defer { llama_free(ctx) }
-        NSLog("[yijing] context created: n_ctx=%d n_batch=%d n_gpu_layers=%d", cparams.n_ctx, cparams.n_batch, mparams.n_gpu_layers)
+        NSLog("[yijing] context created: n_ctx=%d n_batch=%d n_gpu_layers=%d", Int32(cparams.n_ctx), Int32(cparams.n_batch), mparams.n_gpu_layers)
 
         let prompt = system + "\n\n" + user
         let tokens = try tokenize(vocab, text: prompt)
