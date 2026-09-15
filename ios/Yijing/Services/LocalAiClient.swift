@@ -28,20 +28,27 @@ enum LocalAiClient {
 
     /// 使用本地模型生成解读。模型未下载或不完整时抛出带提示的异常。
     static func generate(system: String, user: String) async throws -> String {
+        YjLog.log("LocalAiClient.generate 开始")
         guard let size = ModelManager.modelFileSize() else {
+            YjLog.log("generate 失败：模型尚未下载")
             throw ModelManager.ApiError("本地模型尚未下载，请先到「设置」页下载模型（约 1.2GB）")
         }
         guard size > ModelManager.minModelBytes else {
+            YjLog.log("generate 失败：模型文件不完整 size=\(size)")
             throw ModelManager.ApiError("本地模型文件不完整（当前 \(ModelManager.formatSize(size))，应约 1.2GB），请到「设置」页重新下载或导入")
         }
         let path = ModelManager.modelFileURL().path
+        YjLog.log("generate: modelPath=\(path) size=\(size)")
         // 推理耗时，放到后台线程执行，避免阻塞 UI。
         return try await withCheckedThrowingContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
+                    YjLog.log("开始调用 LlamaCPP.complete")
                     let raw = try LlamaCPP.complete(modelPath: path, system: system, user: user)
+                    YjLog.log("LlamaCPP.complete 返回成功，raw 长度 \(raw.utf8.count)")
                     cont.resume(returning: stripThinking(raw))
                 } catch {
+                    YjLog.log("LlamaCPP.complete 抛出错误: \(error)")
                     cont.resume(throwing: error)
                 }
             }
