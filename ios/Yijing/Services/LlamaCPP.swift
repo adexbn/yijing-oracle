@@ -44,6 +44,9 @@ enum LlamaCPP {
 
         var mparams = llama_model_default_params()
         mparams.n_gpu_layers = 99
+        // 禁用 mmap：不完整/损坏的模型文件用 mmap 加载时，访问越界会触发 SIGBUS 直接崩溃。
+        // 改用 read 加载后，文件问题会返回 nil（可捕获为「模型加载失败」），而非闪退。
+        mparams.use_mmap = false
         guard let model = llama_load_model_from_file(modelPath, mparams) else {
             throw LlamaError.modelLoadFailed
         }
