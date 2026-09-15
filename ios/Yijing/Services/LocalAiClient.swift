@@ -1,6 +1,6 @@
 import Foundation
 
-/// 本地小模型解读：调用 llama.cpp 跑 Qwen2.5-1.5B GGUF，全程离线。
+/// 本地小模型解读：调用 llama.cpp 跑 Qwen3-1.7B GGUF，全程离线。
 enum LocalAiClient {
 
     /// 定稿系统提示词：直白、有对象感、建议具体。
@@ -29,7 +29,7 @@ enum LocalAiClient {
     /// 使用本地模型生成解读。模型未下载时抛出带提示的异常。
     static func generate(system: String, user: String) async throws -> String {
         guard ModelManager.isDownloaded() else {
-            throw ModelManager.ApiError("本地模型尚未下载，请先到「设置」页下载模型（约 0.9GB）")
+            throw ModelManager.ApiError("本地模型尚未下载，请先到「设置」页下载模型（约 1.2GB）")
         }
         let path = ModelManager.modelFileURL().path
         // 推理耗时，放到后台线程执行，避免阻塞 UI。
@@ -45,7 +45,7 @@ enum LocalAiClient {
         }
     }
 
-    /// 去掉思考过程标签及内容，只保留最终回答。
+    /// 去掉 Qwen3 的思考过程标签及内容，只保留最终回答。
     static func stripThinking(_ raw: String) -> String {
         var s = raw
         if let r = s.range(of: #"(?is)<\s*think\s*>.*?</\s*think\s*>"#, options: .regularExpression) {

@@ -9,7 +9,7 @@
 - **结果页**：罗盘、六爻（动爻高亮）、本卦/变卦的象义·卦辞·白话，以及动爻爻辞·白话。
 - **解读**：
   - 无提问 → 四维通用解读（事业 / 感情 / 健康 / 抉择）。
-  - 有提问 → 联网用云端大模型，或离线用本地小模型（llama.cpp + Qwen2.5-1.5B）。
+  - 有提问 → 联网用云端大模型，或离线用本地小模型（llama.cpp + Qwen3-1.7B）。
 - **历史**：起卦记录本地持久化，可一键清空。
 
 ## 本版两处体验优化
@@ -28,7 +28,8 @@ yijing-oracle/
 │   └── android.yml      # Android 端
 └── ios/
     ├── README.md        # 本文件
-    ├── project.yml      # XcodeGen 工程描述（含 SPM 依赖锁定）
+    ├── project.yml      # XcodeGen 工程描述（依赖 llama-ios 本地包）
+    ├── llama-ios/       # 本地 SPM 包，包装官方 llama.cpp XCFramework（b5092，支持 Qwen3）
     ├── codemagic.yaml   # Codemagic 构建 + TestFlight 发布（可选）
     └── Yijing/
         ├── YijingApp.swift  # @main 入口
@@ -46,7 +47,7 @@ yijing-oracle/
 
 | 包 | 用途 | 说明 |
 | --- | --- | --- |
-| `ggml-org/llama.cpp` | 本地小模型推理 | 产品名 `llama`，`import llama`；锁定 2024-12-07 的 revision（`master` 已于 2025-03 移除 `Package.swift`，改发 XCFramework） |
+| `llama-ios`（本地包） | 本地小模型推理 | 产品名 `llama`，`import llama`；包装官方 `llama-b5092-xcframework`（2025-04-09 发布，首个支持 Qwen3 的版本），由 CI 构建前下载 |
 | `6tail/lunar-swift` | 农历 / 四柱 | 产品名 `LunarSwift`，`import LunarSwift` |
 
 ## 本地构建（有 Mac / Xcode）
@@ -55,12 +56,21 @@ yijing-oracle/
 # 1. 安装 XcodeGen
 brew install xcodegen
 
-# 2. 生成 Xcode 工程（首次会拉取并编译 SPM 依赖，llama.cpp 体积较大，耗时较长）
+# 2. 下载官方 llama.cpp XCFramework 到 llama-ios/
+curl -L -o llama-xcframework.zip \
+  https://github.com/ggml-org/llama.cpp/releases/download/b5092/llama-b5092-xcframework.zip
+unzip -q llama-xcframework.zip -d llama-extract
+mv llama-extract/build-apple/llama.xcframework llama-ios/
+rm -rf llama-extract llama-xcframework.zip
+
+# 3. 生成 Xcode 工程
 xcodegen generate
 
-# 3. 用 Xcode 打开并运行
+# 4. 用 Xcode 打开并运行
 open Yijing.xcodeproj
 ```
+
+> `llama.xcframework` 体积约 72MB，未提交到仓库（已被 `.gitignore` 忽略），本地构建时按上一步下载即可。CI（`ios.yml`）会自动执行同样的下载。
 
 > 需在 Xcode 中选择自己的开发团队（Signing & Capabilities → Team）后即可真机 / TestFlight 运行。
 
@@ -96,7 +106,7 @@ open Yijing.xcodeproj
 
 ### 编译耗时提醒
 
-- `llama.cpp` 走 SPM 从源码编译，单次云端构建约 15–40 分钟，注意别超免费额度。
+- `llama.cpp` 改为引用官方预编译 XCFramework（约 72MB，构建前下载），无需源码编译，单次云端构建时间大幅缩短。
 - 首次建议先用「方案 B 的编译验证」确认能编译，再上 Codemagic 跑正式签名构建，省额度。
 
 ## iPhone 自用安装（零成本，无需 $99 账号）
@@ -122,4 +132,5 @@ iOS 的**任何**安装都必须带 Apple 签名，这是系统硬性要求，�
 
 ## 备注
 
-- 若 `llama.cpp` 的 `master` 分支 API 有变动导致 `LlamaCPP.swift` 编译报错，请对照所安装版本 `llama.h` 校正参数名（集中在 model/context 参数与采样器）。
+- 本地包 `llama-ios` 锁定的 XCFramework 版本在 `ios.yml` 的下载步骤中指定（当前为 b5092）。如需升级，同步修改下载 URL、`Package.swift` 与 README 中的版本号即可。
+- 若升级后 `LlamaCPP.swift` 编译报错，请对照该版本 `llama.h` 校正参数名（集中在 model/context 参数与采样器）。

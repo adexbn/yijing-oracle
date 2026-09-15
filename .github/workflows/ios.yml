@@ -19,6 +19,18 @@ jobs:
       - name: 安装 XcodeGen
         run: brew install xcodegen
 
+      # 下载官方预编译的 llama.cpp XCFramework（b5092，首个支持 Qwen3 的版本）。
+      # 解压后放到本地包 llama-ios/ 下，供 Package.swift 的 binaryTarget 引用。
+      - name: 下载 llama.cpp XCFramework (b5092)
+        run: |
+          mkdir -p llama-ios
+          curl -L -o llama-xcframework.zip \
+            https://github.com/ggml-org/llama.cpp/releases/download/b5092/llama-b5092-xcframework.zip
+          unzip -q llama-xcframework.zip -d llama-extract
+          mv llama-extract/build-apple/llama.xcframework llama-ios/
+          rm -rf llama-extract llama-xcframework.zip
+          ls llama-ios/llama.xcframework
+
       - name: 生成 Xcode 工程
         run: xcodegen generate
 

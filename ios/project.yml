@@ -8,8 +8,7 @@ options:
 
 packages:
   llama.cpp:
-    url: https://github.com/ggml-org/llama.cpp.git
-    revision: 19d8762ab61df8286367588a80b9c7db4cb568db
+    path: llama-ios
   LunarSwift:
     url: https://github.com/6tail/lunar-swift.git
     from: 1.0.0
