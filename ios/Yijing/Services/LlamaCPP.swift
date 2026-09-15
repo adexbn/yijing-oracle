@@ -45,13 +45,17 @@ enum LlamaCPP {
         var mparams = llama_model_default_params()
         mparams.n_gpu_layers = 99
         // 禁用 mmap：不完整/损坏的模型文件用 mmap 加载时，访问越界会触发 SIGBUS 直接崩溃。
-        // 改用 read 加载后，文件问题会返回 nil（可捕获为「模型加载失败」），而非闪退。
-        mparams.use_mmap = false
-        guard let model = llama_load_model_from_file(modelPath, mparams) else {
+        // 改用普通读取后，文件问题会返回 nil（可捕获为「模型加载失败」），而非闪退。
+        // b5092 及以后版本用 load_mode 取代 use_mmap 字段；NONE = 不启用 mmap。
+        mparams.load_mode = llama_load_mode.LLAMA_LOAD_MODE_NONE
+        guard let model = llama_model_load_from_file(modelPath, mparams) else {
             throw LlamaError.modelLoadFailed
         }
-        defer { llama_free_model(model) }
+        defer { llama_model_free(model) }
         NSLog("[yijing] model loaded OK")
+
+        // b5092 之后 token 相关接口改用 vocab 指针（而非 model 指针）。
+        let vocab = llama_model_get_vocab(model)
 
         // 内存优化：Qwen3-1.7B 的 KV cache 较大（8 个 KV head），n_ctx=4096 会占用约 450MB KV cache，
         // 加上 1.2GB 模型权重容易触发 iOS Jetsam 闪退。解卦场景 prompt+输出通常 < 1000 token，
@@ -63,17 +67,17 @@ enum LlamaCPP {
         cparams.n_threads = threads
         cparams.n_threads_batch = threads
 
-        guard let ctx = llama_new_context_with_model(model, cparams) else {
+        guard let ctx = llama_init_from_model(model, cparams) else {
             throw LlamaError.contextFailed
         }
         defer { llama_free(ctx) }
         NSLog("[yijing] context created: n_ctx=%d n_batch=%d n_gpu_layers=%d", cparams.n_ctx, cparams.n_batch, mparams.n_gpu_layers)
 
         let prompt = system + "\n\n" + user
-        let tokens = try tokenize(model, text: prompt)
+        let tokens = try tokenize(vocab, text: prompt)
         if tokens.isEmpty { throw LlamaError.tokenizeFailed }
 
-        let eos = llama_token_eos(model)
+        let eos = llama_vocab_eos(vocab)
         let smpl = llama_sampler_init_greedy()
         defer { llama_sampler_free(smpl) }
 
@@ -93,7 +97,7 @@ enum LlamaCPP {
             if token == eos { break }
 
             let n = piece.withUnsafeMutableBufferPointer { bufPtr -> Int32 in
-                llama_token_to_piece(model, token, bufPtr.baseAddress, Int32(bufPtr.count), 0, true)
+                llama_token_to_piece(vocab, token, bufPtr.baseAddress, Int32(bufPtr.count), 0, true)
             }
             if n > 0 {
                 piece.withUnsafeBufferPointer { bufPtr in
@@ -111,12 +115,12 @@ enum LlamaCPP {
         return String(data: decoded, encoding: .utf8) ?? ""
     }
 
-    private static func tokenize(_ model: OpaquePointer, text: String) throws -> [llama_token] {
+    private static func tokenize(_ vocab: OpaquePointer, text: String) throws -> [llama_token] {
         let byteLen = text.utf8.count
         var buffer = [llama_token](repeating: 0, count: 4096)
         let n = buffer.withUnsafeMutableBufferPointer { bufPtr in
             text.withCString { cPtr in
-                llama_tokenize(model, cPtr, Int32(byteLen), bufPtr.baseAddress, Int32(bufPtr.count), true, false)
+                llama_tokenize(vocab, cPtr, Int32(byteLen), bufPtr.baseAddress, Int32(bufPtr.count), true, false)
             }
         }
         guard n > 0 else { throw LlamaError.tokenizeFailed }
