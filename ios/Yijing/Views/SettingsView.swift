@@ -16,6 +16,8 @@ struct SettingsView: View {
     @State private var progress = 0
     @State private var downloaded = ModelManager.isDownloaded()
     @State private var showImporter = false
+    @State private var showLog = false
+    @State private var logText = ""
 
     init() {
         let c = AppSettings.shared.config
@@ -119,12 +121,32 @@ struct SettingsView: View {
                 .padding(16)
                 .cardStyle()
                 .padding(.horizontal, 24)
+
+                // 诊断
+                section("诊断")
+                Button {
+                    logText = YjLog.readLog()
+                    showLog = true
+                } label: {
+                    Text("查看崩溃日志")
+                        .font(.system(size: 15))
+                        .foregroundColor(Theme.ink)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.inkMuted.opacity(0.4), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 24)
+
                 .padding(.bottom, 24)
             }
         }
         .background(Theme.paper.ignoresSafeArea())
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.data]) { result in
             handleImport(result)
+        }
+        .sheet(isPresented: $showLog) {
+            logSheet
         }
     }
 
@@ -162,6 +184,32 @@ struct SettingsView: View {
             .font(.system(size: 13))
             .foregroundColor(Theme.inkMuted)
             .padding(.horizontal, 24)
+    }
+
+    private var logSheet: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Button("关闭") { showLog = false }
+                Spacer()
+                Text("崩溃日志")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(Theme.ink)
+                Spacer()
+                Button("复制") { UIPasteboard.general.string = logText }
+            }
+            .font(.system(size: 15))
+            .foregroundColor(Theme.brand)
+            .padding(12)
+            Divider()
+            ScrollView {
+                Text(logText)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundColor(Theme.ink)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+            }
+        }
+        .background(Theme.paper.ignoresSafeArea())
     }
 
     private func inputRow(_ label: String, _ text: Binding<String>) -> some View {

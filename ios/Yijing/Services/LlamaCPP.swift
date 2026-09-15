@@ -43,6 +43,20 @@ enum YjLog {
         log("========== App 启动 version=\(version) build=\(build) ==========")
         log("日志文件路径: \(logURL.path)")
     }
+
+    /// 读取日志内容（供 App 内「查看日志」用）。日志可能较大，只返回末尾部分。
+    static func readLog() -> String {
+        ioQueue.sync {
+            guard let data = try? Data(contentsOf: logURL) else {
+                return "尚未生成日志文件。请先复现一次崩溃，再回来查看。\n文件路径：\(logURL.path)"
+            }
+            let full = String(data: data, encoding: .utf8) ?? "(日志编码异常)"
+            if full.count > 8000 {
+                return "(日志较长，仅显示末尾 8000 字符)\n\n" + String(full.suffix(8000))
+            }
+            return full
+        }
+    }
 }
 
 /// llama.cpp 薄封装：加载 GGUF 模型并做贪心采样式补全。
