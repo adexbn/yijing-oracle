@@ -42,7 +42,7 @@ yijing-ios/
 
 | 包 | 用途 | 说明 |
 | --- | --- | --- |
-| `ggml-org/llama.cpp` | 本地小模型推理 | 产品名 `llama`，`import llama` |
+| `ggml-org/llama.cpp` | 本地小模型推理 | 产品名 `llama`，`import llama`；锁定 2024-12-07 的 revision（`master` 已于 2025-03 移除 `Package.swift`，改发 XCFramework） |
 | `6tail/lunar-swift` | 农历 / 四柱 | 产品名 `LunarSwift`，`import LunarSwift` |
 
 ## 本地构建（有 Mac / Xcode）

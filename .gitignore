@@ -18,6 +18,9 @@ DerivedData/
 # macOS
 .DS_Store
 
+# 凭证/密钥（防止本地临时凭证误提交）
+*.git-credentials
+
 # 编辑器
 .vscode/
 .idea/

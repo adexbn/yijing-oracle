@@ -27,10 +27,10 @@ enum LlamaCPP {
 
         var mparams = llama_model_default_params()
         mparams.n_gpu_layers = 99
-        guard let model = llama_model_load_from_file(modelPath, mparams) else {
+        guard let model = llama_load_model_from_file(modelPath, mparams) else {
             throw LlamaError.modelLoadFailed
         }
-        defer { llama_model_free(model) }
+        defer { llama_free_model(model) }
 
         var cparams = llama_context_default_params()
         cparams.n_ctx = 4096
@@ -49,7 +49,7 @@ enum LlamaCPP {
         if tokens.isEmpty { throw LlamaError.tokenizeFailed }
 
         let eos = llama_token_eos(model)
-        let smpl = llama_sampler_init_greedy(llama_default_seed())
+        let smpl = llama_sampler_init_greedy()
         defer { llama_sampler_free(smpl) }
 
         var batch = tokens.withUnsafeBufferPointer { buf in
