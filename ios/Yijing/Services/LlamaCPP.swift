@@ -19,9 +19,26 @@ enum LlamaError: LocalizedError {
     }
 }
 
+/// llama.cpp 日志回调：把底层日志接到 NSLog，便于通过爱思助手实时日志查看加载失败的真实原因。
+/// 必须是顶层函数（不能捕获上下文），才能被转换成 C 函数指针传给 llama_log_set。
+private func llamaLogCallback(level: ggml_log_level, text: UnsafePointer<CChar>?, userData: UnsafeMutableRawPointer?) {
+    guard let text = text else { return }
+    let message = String(cString: text).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !message.isEmpty else { return }
+    NSLog("[llama] %@", message)
+}
+
 enum LlamaCPP {
 
     static func complete(modelPath: String, system: String, user: String, maxTokens: Int32 = 1024) throws -> String {
+        // 先把 llama.cpp 的日志接到 NSLog，加载失败时能拿到底层原因。
+        llama_log_set(llamaLogCallback, nil)
+
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: modelPath),
+           let size = attrs[.size] as? NSNumber {
+            NSLog("[yijing] loading model: %@ (%@ bytes)", modelPath, size)
+        }
+
         llama_backend_init()
         defer { llama_backend_free() }
 
