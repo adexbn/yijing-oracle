@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   首次使用初始化页：不走原生 ProgressDialog，自己画一屏。
-  中心太极笔触 + 文案 + 朱砂进度条，提示"首次使用需要初始化"。
+  中心是「太极 + 环形进度」（走一步画一笔会动的太极，圆环随下载进度生长），
+  文案 + 朱砂进度条 + 左侧状态/右侧百分比，提示"首次使用需要初始化"。
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -16,21 +17,11 @@
         android:gravity="center_horizontal"
         android:paddingHorizontal="36dp">
 
-        <FrameLayout
-            android:layout_width="136dp"
-            android:layout_height="136dp">
-
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:background="@drawable/bg_onboarding_ring" />
-
-            <com.yijing.app.ui.BrushWritingView
-                android:id="@+id/onboardingBrush"
-                android:layout_width="92dp"
-                android:layout_height="92dp"
-                android:layout_gravity="center" />
-        </FrameLayout>
+        <!-- 太极 + 进度环：与 iOS OnboardingView.ringView 同构（172dp / 太极 108dp） -->
+        <com.yijing.app.ui.TaijiProgressView
+            android:id="@+id/onboardingTaiji"
+            android:layout_width="172dp"
+            android:layout_height="172dp" />
 
         <TextView
             android:layout_width="wrap_content"
@@ -63,24 +54,49 @@
             android:textColor="@color/ink_muted"
             android:textSize="13sp" />
 
-        <ProgressBar
-            android:id="@+id/onboardingProgress"
-            style="?android:attr/progressBarStyleHorizontal"
+        <!-- 进度整体：条 + 下面一行「左状态 / 右百分比」，与 iOS progressBlock 一致 -->
+        <LinearLayout
+            android:id="@+id/onboardingProgressBlock"
             android:layout_width="match_parent"
-            android:layout_height="6dp"
-            android:layout_marginTop="32dp"
-            android:max="100"
-            android:progress="0"
-            android:progressDrawable="@drawable/progress_cinnabar" />
-
-        <TextView
-            android:id="@+id/onboardingPercent"
-            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:text="0%"
-            android:textColor="@color/ink_muted"
-            android:textSize="13sp" />
+            android:layout_marginTop="30dp"
+            android:orientation="vertical">
+
+            <ProgressBar
+                android:id="@+id/onboardingProgress"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent"
+                android:layout_height="6dp"
+                android:max="100"
+                android:progress="0"
+                android:progressDrawable="@drawable/progress_cinnabar" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:id="@+id/onboardingStatus"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="准备中"
+                    android:textColor="@color/ink_muted"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:id="@+id/onboardingPercent"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFeatureSettings="tnum"
+                    android:text="0%"
+                    android:textColor="@color/cinnabar"
+                    android:textSize="12sp" />
+            </LinearLayout>
+        </LinearLayout>
 
         <TextView
             android:id="@+id/onboardingRetry"
@@ -128,7 +144,9 @@
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|center_horizontal"
         android:layout_marginBottom="36dp"
-        android:text="仅需一次 · 完成后即可完全离线解卦"
+        android:gravity="center"
+        android:lineSpacingExtra="4dp"
+        android:text="仅需一次　·　完成后可完全离线解卦\n模型存放于 App 数据目录，重装或升级不会重复下载"
         android:textColor="@color/ink_muted"
-        android:textSize="12sp" />
+        android:textSize="11sp" />
 </FrameLayout>

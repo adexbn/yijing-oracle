@@ -41,16 +41,19 @@
         android:textSize="13sp"
         android:text="真太阳时 · 待定位" />
 
+    <!--
+      问题输入：与 iOS HomeView.questionEditor 对齐（固定 160dp + 内边距 12dp）。
+      原先用 wrap_content + minLines=4，实际只有 4 行高度，比 iOS 矮一大截，故改为固定高度。
+    -->
     <EditText
         android:id="@+id/questionInput"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="28dp"
+        android:layout_height="160dp"
+        android:layout_marginTop="24dp"
         android:background="@android:color/transparent"
-        android:gravity="top"
+        android:gravity="top|start"
         android:hint="@string/question_hint"
         android:inputType="textMultiLine"
-        android:minLines="4"
         android:maxLines="7"
         android:scrollbars="vertical"
         android:padding="12dp"
@@ -63,12 +66,18 @@
         android:layout_height="1dp"
         android:background="@color/divider" />
 
+    <!-- 弹簧：把印章压到下方，与 iOS 的 Spacer(minLength: 0) 一致 -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:minHeight="56dp" />
+
     <com.yijing.app.ui.SealButton
         android:id="@+id/castBtn"
         android:layout_width="150dp"
         android:layout_height="150dp"
-        android:layout_gravity="center_horizontal"
-        android:layout_marginTop="48dp" />
+        android:layout_gravity="center_horizontal" />
 
     <TextView
         android:layout_width="wrap_content"

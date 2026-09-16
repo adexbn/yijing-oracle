@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- 笔触外圈的细金环（与 App 图标同款元素）。 -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android"
-    android:shape="oval">
-    <solid android:color="#00000000" />
-    <stroke
-        android:width="1dp"
-        android:color="#3DC8A45C" />
-</shape>

@@ -11,7 +11,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.yijing.app.core.LocalAiClient
 import com.yijing.app.core.ModelManager
-import com.yijing.app.ui.BrushWritingView
+import com.yijing.app.ui.TaijiProgressView
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -40,10 +40,12 @@ class OnboardingActivity : AppCompatActivity() {
         var skipped = false
     }
 
-    private lateinit var brush: BrushWritingView
+    private lateinit var taiji: TaijiProgressView
     private lateinit var headline: TextView
     private lateinit var detail: TextView
+    private lateinit var status: TextView
     private lateinit var percent: TextView
+    private lateinit var progressBlock: View
     private lateinit var progressBar: ProgressBar
     private lateinit var retryBtn: TextView
     private lateinit var cancelBtn: TextView
@@ -65,16 +67,18 @@ class OnboardingActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_onboarding)
 
-        brush = findViewById(R.id.onboardingBrush)
+        taiji = findViewById(R.id.onboardingTaiji)
         headline = findViewById(R.id.onboardingHeadline)
         detail = findViewById(R.id.onboardingDetail)
+        status = findViewById(R.id.onboardingStatus)
         percent = findViewById(R.id.onboardingPercent)
+        progressBlock = findViewById(R.id.onboardingProgressBlock)
         progressBar = findViewById(R.id.onboardingProgress)
         retryBtn = findViewById(R.id.onboardingRetry)
         cancelBtn = findViewById(R.id.onboardingCancel)
         skipBtn = findViewById(R.id.onboardingSkip)
 
-        brush.start()
+        taiji.start()
         retryBtn.setOnClickListener { begin() }
         cancelBtn.setOnClickListener { cancelDownload() }
         skipBtn.setOnClickListener { goMain() }
@@ -103,6 +107,17 @@ class OnboardingActivity : AppCompatActivity() {
         begin()
     }
 
+    /** 太极的呼吸动画只在页面可见时跑，退到后台就停，别白耗电。 */
+    override fun onStart() {
+        super.onStart()
+        taiji.start()
+    }
+
+    override fun onStop() {
+        taiji.stop()
+        super.onStop()
+    }
+
     /** 走一遍「下载模型 → 载入内存 → 进主界面」。失败则留在本页给重试按钮。 */
     private fun begin() {
         if (running) return
@@ -112,16 +127,18 @@ class OnboardingActivity : AppCompatActivity() {
         retryBtn.visibility = View.GONE
         skipBtn.visibility = View.GONE
         cancelBtn.visibility = View.VISIBLE
-        progressBar.visibility = View.VISIBLE
-        percent.visibility = View.VISIBLE
+        progressBlock.visibility = View.VISIBLE
         progressBar.progress = 0
         percent.text = "0%"
+        status.text = "准备中"
+        taiji.setProgress(0f)
         headline.text = "首次使用需要初始化"
         detail.text = "正在准备解卦所需的本地模型"
 
         job = lifecycleScope.launch {
             try {
                 if (!ModelManager.isDownloaded(this@OnboardingActivity)) {
+                    status.text = "下载中"
                     detail.text = "正在下载解卦模型（约 1.2GB）\n请保持网络畅通，仅需一次"
                     ModelManager.download(applicationContext) { pct ->
                         if (gen == generation) runOnUiThread { showProgress(pct) }
@@ -132,8 +149,10 @@ class OnboardingActivity : AppCompatActivity() {
                 cancelBtn.visibility = View.GONE
                 headline.text = "即将完成"
                 detail.text = "正在把模型载入内存，稍候即可解卦"
+                status.text = "载入模型"
                 progressBar.progress = 100
                 percent.text = "100%"
+                taiji.setProgress(1f)
                 withContext(Dispatchers.IO) {
                     LocalAiClient.preload(applicationContext)
                 }
@@ -161,8 +180,8 @@ class OnboardingActivity : AppCompatActivity() {
         job = null
         if (isFinishing || isDestroyed) return
         cancelBtn.visibility = View.GONE
-        progressBar.visibility = View.GONE
-        percent.visibility = View.GONE
+        progressBlock.visibility = View.GONE
+        status.text = "已取消"
         headline.text = "已取消下载"
         detail.text = "模型还没下载完。可以重新下载，或先跳过、稍后在设置里下载"
         retryBtn.visibility = View.VISIBLE
@@ -175,8 +194,8 @@ class OnboardingActivity : AppCompatActivity() {
         job = null
         if (isFinishing || isDestroyed) return
         cancelBtn.visibility = View.GONE
-        progressBar.visibility = View.GONE
-        percent.visibility = View.GONE
+        progressBlock.visibility = View.GONE
+        status.text = "未完成"
         headline.text = "初始化未完成"
         detail.text = "$message\n请检查网络后重试，或改用 Wi-Fi 再试一次"
         retryBtn.visibility = View.VISIBLE
@@ -188,6 +207,9 @@ class OnboardingActivity : AppCompatActivity() {
         val p = pct.coerceIn(0, 99)
         progressBar.progress = p
         percent.text = "$p%"
+        status.text = "下载中"
+        // 圆环与太极同步生长，和 iOS 的 ringView 一致
+        taiji.setProgress(p / 100f)
     }
 
     private fun goMain() {
