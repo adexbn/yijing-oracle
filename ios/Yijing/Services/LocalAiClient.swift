@@ -64,7 +64,8 @@ enum LocalAiClient {
         if let open = s.range(of: #"(?is)<\s*think\s*>"#, options: .regularExpression) {
             s = String(s[..<open.lowerBound])
         }
-        s = s.replacingOccurrences(of: #"(?is)<\s*/?\s*response\s*>"#, with: "", options: .regularExpression)
+        // 清掉可能残留的对话模板标记（assistant / im_start / im_end 等）。
+        s = s.replacingOccurrences(of: #"(?is)<\s*/?\s*(response|assistant|im_start|im_end|endoftext)\s*>"#, with: "", options: .regularExpression)
         return s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

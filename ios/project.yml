@@ -27,6 +27,10 @@ targets:
     info:
       path: Yijing/Info.plist
       properties:
+        # 显式写入版本号，否则 XcodeGen 会用默认值 1.0 / 1 覆盖，
+        # 导致日志里永远显示 build=1，无法判断手上装的是哪一版。
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         CFBundleDisplayName: 周易小卦
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
@@ -40,7 +44,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.yijing.app
         SWIFT_VERSION: "5.0"
         MARKETING_VERSION: "1.0.0"
-        CURRENT_PROJECT_VERSION: "3"
+        CURRENT_PROJECT_VERSION: "4"
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: ""
