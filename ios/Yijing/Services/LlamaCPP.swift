@@ -274,8 +274,11 @@ enum LlamaCPP {
             // idx 用 -1：llama.h 官方写法，取「本批最后一个 token 的 logits」。
             // 之前用 batch.n_tokens - 1，依赖输出行映射，属于易错的写法。
             let token = llama_sampler_sample(smpl, ctx, -1)
-            if token == eos {
+            // 用 is_eog 判断而不是只比 eos：该 GGUF 把 </s>、<|endoftext|>、<|im_end|> 等都标成了 EOG，
+            // 只比 151645 会漏掉其它终止符，白跑到 maxTokens 上限（旧日志里输出 1024 个「！」就是这么来的）。
+            if llama_vocab_is_eog(vocab, token) {
                 stoppedByEOS = true
+                YjLog.log("STEP 7: 命中 EOG token \(token)（eos=\(eos)）")
                 break
             }
             llama_sampler_accept(smpl, token)
@@ -311,7 +314,7 @@ enum LlamaCPP {
         }
 
         let elapsed = String(format: "%.1f", Date().timeIntervalSince(startedAt))
-        let reason = stoppedByEOS ? "命中 EOS（<|im_end|>）正常结束" : "达到 maxTokens=\(maxTokens) 上限"
+        let reason = stoppedByEOS ? "命中结束符（EOG）正常结束" : "达到 maxTokens=\(maxTokens) 上限（异常：模型没吐结束符）"
         YjLog.log("STEP 8: 生成结束，共 \(generated) 个 token，输出 \(decoded.count) 字节，\(reason)，总耗时 \(elapsed) 秒")
         YjLog.log("STEP 8: 前 10 个 token id = \(firstTokenIDs)")
 
@@ -329,13 +332,19 @@ enum LlamaCPP {
     /// 而是顺着这段文字当文章续写 —— 既不会输出 <|im_end|>（导致永远不触发 EOS，一直生成到上限），
     /// 又极易退化成一串「！」之类无意义字符（实测连续 1024 个 token 全是感叹号）。
     ///
-    /// 末尾预填「空的思考块」是 Qwen3 官方的非思考模式写法（等价 enable_thinking=false）：
-    /// 让 1.7B 小模型跳过  thinking 环节直接作答，既省 token 也更快。
+    /// 末尾的「空的思考块」是 Qwen3 tokenizer_config.json 里 chat_template 对
+    /// enable_thinking=false 的官方写法：
+    ///     {{- '<|im_start|>assistant\n' }}
+    ///     {%- if enable_thinking is defined and enable_thinking is false %}
+    ///         {{- '<think>\n\n</think>\n\n' }}
+    ///     {%- endif %}
+    /// 即开头就写一个「已经结束的空思考块」，让模型跳过思考直接作答。
+    /// 注意必须带上收尾的 </think>，只写 <think> 会把模型留在思考块里、继续生成大段内心戏。
     private static func applyChatTemplate(system: String, user: String) -> String {
         var p = ""
         p += "<|im_start|>system\n" + system + "<|im_end|>\n"
         p += "<|im_start|>user\n" + user + "<|im_end|>\n"
-        p += "<|im_start|>assistant\n" + " thinking\n\n\n\n\n\n"
+        p += "<|im_start|>assistant\n" + "<think>\n\n</think>\n\n"
         return p
     }
 
