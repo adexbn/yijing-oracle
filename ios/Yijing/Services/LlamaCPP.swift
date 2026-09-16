@@ -18,22 +18,45 @@ enum YjLog {
     }()
     // 保持句柄常开，避免每次写都 open/close（llama.cpp 加载时会打印大量日志行）。
     private static var handle: FileHandle?
+    // 待落盘的缓冲。llama.cpp 加载模型时会逐行抛出数百条日志，
+    // 若每行都 seekToEnd + write（两次系统调用）就要写几百次；
+    // 这里先攒在内存，攒够 32KB 或调用 flush() 时一次性写入。
+    private static var pending = ""
 
+    /// 缓冲写：开销可忽略，可用于高频调用（如 llama.cpp 的日志回调）。
     static func log(_ message: String) {
-        // 同步写盘：确保崩溃前一步的日志已经落到文件里（而不是留在内存队列中丢失）。
         ioQueue.sync {
-            let line = ts.string(from: Date()) + "  " + message + "\n"
-            guard let data = line.data(using: .utf8) else { return }
-            if handle == nil {
-                if !FileManager.default.fileExists(atPath: logURL.path) {
-                    FileManager.default.createFile(atPath: logURL.path, contents: nil)
-                }
-                handle = try? FileHandle(forWritingTo: logURL)
-            }
-            guard let h = handle else { return }
-            try? h.seekToEnd()
-            try? h.write(contentsOf: data)
+            pending += ts.string(from: Date()) + "  " + message + "\n"
+            if pending.utf8.count >= 32 * 1024 { flushLocked() }
         }
+    }
+
+    /// 立即落盘。只用于「崩溃前必须留下这一行」的场合（如 GGML_ASSERT 断言回调）。
+    static func logSync(_ message: String) {
+        ioQueue.sync {
+            pending += ts.string(from: Date()) + "  " + message + "\n"
+            flushLocked()
+        }
+    }
+
+    /// 把缓冲区里的日志一次性写进文件。
+    static func flush() {
+        ioQueue.sync { flushLocked() }
+    }
+
+    /// 真正的写盘动作（只能在 ioQueue 上调用）。日志文件可能很大，不复用旧内容。
+    private static func flushLocked() {
+        guard !pending.isEmpty, let data = pending.data(using: .utf8) else { return }
+        if handle == nil {
+            if !FileManager.default.fileExists(atPath: logURL.path) {
+                FileManager.default.createFile(atPath: logURL.path, contents: nil)
+            }
+            handle = try? FileHandle(forWritingTo: logURL)
+        }
+        guard let h = handle else { return }
+        try? h.seekToEnd()
+        try? h.write(contentsOf: data)
+        pending = ""
     }
 
     /// 每次 App 启动记录一次，附上版本/构建号，便于确认安装的是哪个包。
@@ -45,11 +68,13 @@ enum YjLog {
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
         log("========== App 启动 version=\(version) build=\(build) ==========")
         log("日志文件路径: \(logURL.path)")
+        flush()
     }
 
     /// 读取日志内容（供 App 内「查看日志」用）。日志可能较大，只返回末尾部分。
     static func readLog() -> String {
-        ioQueue.sync {
+        flush()
+        return ioQueue.sync {
             guard let data = try? Data(contentsOf: logURL) else {
                 return "尚未生成日志文件。请先复现一次崩溃，再回来查看。\n文件路径：\(logURL.path)"
             }
@@ -96,7 +121,8 @@ private func llamaLogCallback(level: ggml_log_level, text: UnsafePointer<CChar>?
 /// 必须是顶层函数（不能捕获上下文），才能被转换成 C 函数指针传给 ggml_set_abort_callback。
 private func ggmlAbortCallback(_ errorMessage: UnsafePointer<CChar>?) {
     let msg = errorMessage.map { String(cString: $0) } ?? "(空消息)"
-    YjLog.log("[GGML_ABORT] " + msg)
+    // 这里必须用 logSync：断言随时可能把进程 abort 掉，缓冲里的内容会丢。
+    YjLog.logSync("[GGML_ABORT] " + msg)
 }
 
 /// 后端与模型的常驻缓存。
@@ -145,16 +171,25 @@ private enum LlamaRuntime {
         loadedPath = nil
 
         var mparams = llama_model_default_params()
-        // 用纯 CPU 推理：此前怀疑 Metal offload 导致崩溃，后确认真正的崩溃原因是
-        // prompt 一次性超过 n_batch 触发 GGML_ASSERT（已修复）。为稳妥起见仍先跑 CPU，
-        // 后续如仍嫌慢可再把 n_gpu_layers 调到 99 走 Metal。
-        mparams.n_gpu_layers = 0
+        // 关键性能开关：把全部层卸载到 Metal（A19 GPU）上跑。
+        // 之前设 0（纯 CPU）是怀疑 Metal offload 致崩，但后来查明崩溃真因是
+        // prompt 一次性超过 n_batch 触发 GGML_ASSERT（已修复），与 GPU 无关。
+        // 纯 CPU 时 1.7B 模型实测只有约 19 token/s，iPhone 17 的 GPU 全程闲置；
+        // 开启 GPU 卸载后同一模型通常快 2~4 倍。
+        mparams.n_gpu_layers = 99
         // 禁用 mmap：不完整/损坏的模型文件用 mmap 加载时，访问越界会触发 SIGBUS 直接崩溃。
         // 改用普通读取后，文件问题会返回 nil（可捕获为「模型加载失败」），而非闪退。
         mparams.load_mode = LLAMA_LOAD_MODE_NONE
-        YjLog.log("STEP 2: 开始加载模型 (n_gpu_layers=0, load_mode=NONE)")
-        guard let m = llama_model_load_from_file(path, mparams) else {
-            YjLog.log("STEP 2 失败：模型加载返回 nil")
+        YjLog.log("STEP 2: 开始加载模型 (n_gpu_layers=99 走 Metal, load_mode=NONE)")
+        var loaded = llama_model_load_from_file(path, mparams)
+        if loaded == nil {
+            // GPU 路径失败（如显存不足）时退回纯 CPU：宁可慢，也不要打不开。
+            YjLog.logSync("STEP 2: GPU 卸载加载失败，回退纯 CPU 重试")
+            mparams.n_gpu_layers = 0
+            loaded = llama_model_load_from_file(path, mparams)
+        }
+        guard let m = loaded else {
+            YjLog.logSync("STEP 2 失败：模型加载返回 nil")
             throw LlamaError.modelLoadFailed
         }
         // b5092 之后 token 相关接口改用 vocab 指针（而非 model 指针）。
@@ -174,7 +209,9 @@ private enum LlamaRuntime {
 enum LlamaCPP {
 
     /// 生成一次回复。并发调用会被串行化（同一时刻只跑一次推理）。
-    static func complete(modelPath: String, system: String, user: String, maxTokens: Int32 = 512) throws -> String {
+    /// maxTokens 默认 320：系统提示词要求「150 字以内」，中文约 1 字 1 token，
+    /// 320 足够覆盖，同时把「模型不吐结束符」时的最坏耗时压掉约四成（原为 512）。
+    static func complete(modelPath: String, system: String, user: String, maxTokens: Int32 = 320) throws -> String {
         // 先把 llama.cpp 的日志接到文件日志，加载失败时能拿到底层原因。
         llama_log_set(llamaLogCallback, nil)
         // GGML_ASSERT 断言失败时走 ggml_abort，默认只 fprintf(stderr) 不进 llama 日志回调；
@@ -182,6 +219,15 @@ enum LlamaCPP {
         ggml_set_abort_callback(ggmlAbortCallback)
 
         let startedAt = Date()
+        var phaseAt = startedAt
+        /// 记录上一阶段耗时，并在日志里打一条「⏱」行 —— 事后看日志即可知道时间花在哪一步。
+        func phaseDone(_ name: String, extra: String = "") {
+            let now = Date()
+            let ms = Int(now.timeIntervalSince(phaseAt) * 1000)
+            phaseAt = now
+            YjLog.log("⏱ \(name)：\(ms) ms" + (extra.isEmpty ? "" : "（\(extra)）"))
+        }
+
         YjLog.log("========== complete() 开始 ==========")
         YjLog.log("modelPath=\(modelPath)")
 
@@ -191,9 +237,12 @@ enum LlamaCPP {
         } else {
             YjLog.log("警告：无法读取模型文件属性")
         }
+        phaseDone("读取模型文件属性")
 
         LlamaRuntime.ensureBackend()
+        phaseDone("后端初始化（首次含 Metal 着色器库编译）")
         let (model, vocab) = try LlamaRuntime.loadModel(path: modelPath)
+        phaseDone("模型加载")
 
         // 内存优化：Qwen3-1.7B 的 KV cache 较大（8 个 KV head），n_ctx=4096 会占用约 450MB KV cache，
         // 加上 1.2GB 模型权重容易触发 iOS Jetsam 闪退。解卦场景 prompt+输出通常 < 1000 token，
@@ -213,6 +262,7 @@ enum LlamaCPP {
         }
         defer { llama_free(ctx) }
         YjLog.log("STEP 4: context OK")
+        phaseDone("创建 context")
         _ = model
 
         // 关键：必须套上模型的对话模板，否则模型不处于「对话模式」。见 applyChatTemplate 注释。
@@ -221,6 +271,7 @@ enum LlamaCPP {
         let tokens = try tokenize(vocab, text: prompt)
         if tokens.isEmpty { throw LlamaError.tokenizeFailed }
         YjLog.log("STEP 5: 分词 OK, tokens=\(tokens.count)（含 ChatML 标记与 assistant 引导）")
+        phaseDone("分词", extra: "\(tokens.count) tokens")
 
         let eos = llama_vocab_eos(vocab)
         // 采样链：top_k 20 → top_p 0.8 → temp 0.7 → dist，采用 Qwen3 官方推荐的非思考模式参数。
@@ -263,6 +314,7 @@ enum LlamaCPP {
             promptPos += chunkCount
         }
         YjLog.log("STEP 6: prompt decode OK（共 \(tokens.count) tokens）")
+        phaseDone("prompt 解码", extra: "\(tokens.count) tokens")
 
         var decoded = Data()
         var piece = [CChar](repeating: 0, count: 256)
@@ -313,6 +365,12 @@ enum LlamaCPP {
             }
         }
 
+        // 生成速度（token/s）是判断到底走没走 GPU 的最直观指标：
+        // 纯 CPU 约 19 token/s，开了 Metal 卸载会明显高于这个数。
+        let genSeconds = Date().timeIntervalSince(phaseAt)
+        let tps = genSeconds > 0 ? Double(generated) / genSeconds : 0
+        phaseDone("生成", extra: "\(generated) tokens，\(String(format: "%.1f", tps)) token/s")
+
         let elapsed = String(format: "%.1f", Date().timeIntervalSince(startedAt))
         let reason = stoppedByEOS ? "命中结束符（EOG）正常结束" : "达到 maxTokens=\(maxTokens) 上限（异常：模型没吐结束符）"
         YjLog.log("STEP 8: 生成结束，共 \(generated) 个 token，输出 \(decoded.count) 字节，\(reason)，总耗时 \(elapsed) 秒")
@@ -322,7 +380,15 @@ enum LlamaCPP {
         //（表现为「输出空白」），用 String(decoding:) 只会把非法字节替换成 U+FFFD。
         let text = String(decoding: decoded, as: UTF8.self)
         YjLog.log("STEP 8: 输出预览 = " + String(text.prefix(200)).replacingOccurrences(of: "\n", with: "⏎"))
+        YjLog.flush()
         return text
+    }
+
+    /// App 启动后在后台预热：只把后端初始化一次。
+    /// `llama_backend_init()` 会加载并编译 Metal 着色器库，真机实测约 15 秒；
+    /// 放在启动时预热，用户点「解卦」时就不用再等这 15 秒。
+    static func warmUp() {
+        LlamaRuntime.ensureBackend()
     }
 
     /// 手工套用 Qwen3 的 ChatML 对话模板（模型自带的 tokenizer.chat_template 没有可用的 C API，

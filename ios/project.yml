@@ -44,8 +44,11 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.yijing.app
         SWIFT_VERSION: "5.0"
         MARKETING_VERSION: "1.0.0"
-        CURRENT_PROJECT_VERSION: "4"
+        CURRENT_PROJECT_VERSION: "5"
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1"
-        ASSETCATALOG_COMPILER_APPICON_NAME: ""
+        # 之前这里是空字符串，等于告诉编译器「本 App 没有图标资源」，
+        # 于是打包出来的 App 在桌面上就是系统默认的灰色占位图标。
+        # 现已在 Yijing/Assets.xcassets 下新增 AppIcon 图标集，这里指回它。
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SUPPORTS_MACCATALYST: NO
