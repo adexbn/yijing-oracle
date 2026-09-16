@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 重试按钮：朱砂描边 + 极淡填充，避免系统默认按钮的灰蓝样式。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <corners android:radius="22dp" />
+    <solid android:color="#14A63A2B" />
+    <stroke
+        android:width="1dp"
+        android:color="@color/cinnabar" />
+</shape>

@@ -15,15 +15,20 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.yijing.app.R
 import com.yijing.app.core.Divination
 import com.yijing.app.core.DivinationResult
 import com.yijing.app.core.HistoryStore
+import com.yijing.app.core.LocalAiClient
 import com.yijing.app.core.LunarCalendar
+import com.yijing.app.core.ModelManager
 import com.yijing.app.core.SolarTime
 import com.yijing.app.core.Trigram
 import com.yijing.app.ui.SealButton
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import java.util.Calendar
 
 class MainActivity : AppCompatActivity() {
@@ -35,6 +40,15 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // 首次使用（本地模型还不存在）先走初始化页：自动下载模型并预热。
+        // 放在 setContentView 之前，避免主界面一闪而过。
+        if (!ModelManager.isDownloaded(this) && !OnboardingActivity.skipped) {
+            startActivity(Intent(this, OnboardingActivity::class.java))
+            finish()
+            return
+        }
+
         setContentView(R.layout.activity_main)
 
         questionInput = findViewById(R.id.questionInput)
@@ -44,8 +58,10 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.btnMine).setOnClickListener {
             startActivity(Intent(this, HistoryActivity::class.java))
         }
-        findViewById<TextView>(R.id.btnSettings).setOnClickListener {
+        // 设置入口不对外露出：长按「我的」才打开，界面上看不出这个 App 有设置页。
+        findViewById<TextView>(R.id.btnMine).setOnLongClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
+            true
         }
 
         updateSolarTime()
@@ -54,6 +70,11 @@ class MainActivity : AppCompatActivity() {
         castBtn.setOnLongClickListener {
             showConditionSheet()
             true
+        }
+
+        // 后台把模型读进内存：第一次点「起卦」就不用再等 1.2GB 读盘。
+        lifecycleScope.launch(Dispatchers.IO) {
+            runCatching { LocalAiClient.preload(applicationContext) }
         }
     }
 

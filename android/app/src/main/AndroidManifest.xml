@@ -9,8 +9,9 @@
     <application
         android:allowBackup="true"
         android:debuggable="true"
-        android:icon="@drawable/ic_launcher"
+        android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Yijing"
         android:usesCleartextTraffic="true"
@@ -24,6 +25,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- 首次使用初始化页：下载模型耗时长，配置变化（旋转）不要重建，否则下载会被打断。 -->
+        <activity
+            android:name=".OnboardingActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout"
+            android:exported="false" />
 
         <activity
             android:name=".ResultActivity"

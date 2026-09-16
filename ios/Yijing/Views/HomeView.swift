@@ -86,14 +86,14 @@ struct HomeView: View {
                 .font(.system(size: 24, weight: .bold))
                 .foregroundColor(Theme.ink)
             Spacer()
-            Button { showHistory = true } label: {
-                Text("我的").font(.system(size: 15)).foregroundColor(Theme.brand).padding(8)
-            }
-            .buttonStyle(.plain)
-            Button { showSettings = true } label: {
-                Text("设置").font(.system(size: 15)).foregroundColor(Theme.brand).padding(8)
-            }
-            .buttonStyle(.plain)
+            // 「我的」= 历史记录入口；长按隐藏入口打开设置（对外看不出设置入口）
+            Text("我的")
+                .font(.system(size: 15))
+                .foregroundColor(Theme.brand)
+                .padding(8)
+                .contentShape(Rectangle())
+                .onTapGesture { showHistory = true }
+                .onLongPressGesture(minimumDuration: 1.2) { showSettings = true }
         }
     }
 

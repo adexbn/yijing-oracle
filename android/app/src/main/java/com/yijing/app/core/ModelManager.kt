@@ -24,9 +24,16 @@ object ModelManager {
     fun modelFile(context: Context): File =
         File(context.getExternalFilesDir("models"), MODEL_FILE)
 
+    /**
+     * 模型文件完整的最小字节数。Qwen3-1.7B Q4_K_M 约 1223MB。
+     * 与 iOS 端同一套判断：不完整文件被 llama.cpp 用 mmap 加载时访问越界会直接崩（非可捕获异常），
+     * 所以宁可按「长度偏小即视为未下载」处理。
+     */
+    private const val MIN_MODEL_BYTES = 1100L * 1024 * 1024
+
     fun isDownloaded(context: Context): Boolean {
         val f = modelFile(context)
-        return f.exists() && f.length() > 100L * 1024 * 1024
+        return f.exists() && f.length() > MIN_MODEL_BYTES
     }
 
     /** 删除已下载模型，释放空间。 */

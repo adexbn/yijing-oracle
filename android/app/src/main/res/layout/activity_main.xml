@@ -29,15 +29,6 @@
             android:text="我的"
             android:textColor="@color/brand"
             android:textSize="15sp" />
-
-        <TextView
-            android:id="@+id/btnSettings"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:padding="8dp"
-            android:text="设置"
-            android:textColor="@color/brand"
-            android:textSize="15sp" />
     </LinearLayout>
 
     <TextView

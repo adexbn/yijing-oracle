@@ -391,6 +391,15 @@ enum LlamaCPP {
         LlamaRuntime.ensureBackend()
     }
 
+    /// 把模型也读进内存（只加载，不推理）。
+    /// 首次初始化下载完成后调用：用户第一次点「起卦」时就直接复用已加载的模型，
+    /// 不用再等 1.2GB 读盘。
+    static func preloadModel() {
+        guard ModelManager.isDownloaded() else { return }
+        LlamaRuntime.ensureBackend()
+        _ = try? LlamaRuntime.loadModel(path: ModelManager.modelFileURL().path)
+    }
+
     /// 手工套用 Qwen3 的 ChatML 对话模板（模型自带的 tokenizer.chat_template 没有可用的 C API，
     /// 这里按模板原文拼出来，并用 parse_special 让 <|im_start|> 等标记解析成真正的特殊 token）。
     ///

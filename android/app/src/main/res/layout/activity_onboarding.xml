@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  首次使用初始化页：不走原生 ProgressDialog，自己画一屏。
+  中心太极笔触 + 文案 + 朱砂进度条，提示"首次使用需要初始化"。
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/bg_onboarding">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        android:paddingHorizontal="36dp">
+
+        <FrameLayout
+            android:layout_width="136dp"
+            android:layout_height="136dp">
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="@drawable/bg_onboarding_ring" />
+
+            <com.yijing.app.ui.BrushWritingView
+                android:id="@+id/onboardingBrush"
+                android:layout_width="92dp"
+                android:layout_height="92dp"
+                android:layout_gravity="center" />
+        </FrameLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:letterSpacing="0.28"
+            android:text="周易小卦"
+            android:textColor="@color/brand"
+            android:textSize="17sp" />
+
+        <TextView
+            android:id="@+id/onboardingHeadline"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="22dp"
+            android:gravity="center"
+            android:text="首次使用需要初始化"
+            android:textColor="@color/ink"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/onboardingDetail"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:gravity="center"
+            android:lineSpacingExtra="5dp"
+            android:text="正在准备解卦所需的本地模型"
+            android:textColor="@color/ink_muted"
+            android:textSize="13sp" />
+
+        <ProgressBar
+            android:id="@+id/onboardingProgress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="6dp"
+            android:layout_marginTop="32dp"
+            android:max="100"
+            android:progress="0"
+            android:progressDrawable="@drawable/progress_cinnabar" />
+
+        <TextView
+            android:id="@+id/onboardingPercent"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="0%"
+            android:textColor="@color/ink_muted"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/onboardingRetry"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="26dp"
+            android:background="@drawable/bg_retry_button"
+            android:paddingHorizontal="26dp"
+            android:paddingVertical="11dp"
+            android:text="重新尝试"
+            android:textColor="@color/cinnabar"
+            android:textSize="14sp"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="36dp"
+        android:text="仅需一次 · 完成后即可完全离线解卦"
+        android:textColor="@color/ink_muted"
+        android:textSize="12sp" />
+</FrameLayout>

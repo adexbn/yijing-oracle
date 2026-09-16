@@ -19,6 +19,7 @@ import androidx.lifecycle.lifecycleScope
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.switchmaterial.SwitchMaterial
 import com.yijing.app.core.AiClient
+import com.yijing.app.core.LocalAiClient
 import com.yijing.app.core.ModelManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -109,6 +110,8 @@ class SettingsActivity : AppCompatActivity() {
         modelBtn.setOnClickListener {
             if (downloading) return@setOnClickListener
             if (ModelManager.isDownloaded(this)) {
+                // 先丢弃内存里常驻的模型句柄，再删文件，避免删完还被拿去做推理。
+                LocalAiClient.releaseCache()
                 ModelManager.delete(this)
                 refreshModelStatus()
                 Toast.makeText(this, "已删除本地模型", Toast.LENGTH_SHORT).show()
@@ -145,6 +148,8 @@ class SettingsActivity : AppCompatActivity() {
                         ModelManager.importFrom(this@SettingsActivity, input)
                     } ?: throw Exception("无法读取所选文件")
                 }
+                // 文件已被换成新的，丢弃旧的常驻模型，下次推理时重新加载。
+                LocalAiClient.releaseCache()
                 runOnUiThread {
                     refreshModelStatus()
                     val msg = if (ModelManager.isDownloaded(this@SettingsActivity)) {

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 页面底色：纸上微微偏暖的竖向渐变，比纯色更像"宣纸"。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:angle="270"
+        android:startColor="#FDFBF6"
+        android:endColor="#F2E9D9" />
+</shape>
