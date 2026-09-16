@@ -9,6 +9,7 @@ import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.Spinner
 import android.widget.TextView
@@ -21,6 +22,8 @@ import com.google.android.material.switchmaterial.SwitchMaterial
 import com.yijing.app.core.AiClient
 import com.yijing.app.core.LocalAiClient
 import com.yijing.app.core.ModelManager
+import com.yijing.app.core.PerfTrace
+import com.yijing.app.ui.PerfPanel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -87,6 +90,7 @@ class SettingsActivity : AppCompatActivity() {
 
         setupModelSection()
         refreshModelStatus()
+        setupDebugSection()
 
         findViewById<MaterialButton>(R.id.saveBtn).setOnClickListener {
             val provider = providers[providerSpinner.selectedItemPosition]
@@ -130,6 +134,21 @@ class SettingsActivity : AppCompatActivity() {
         }
         findViewById<MaterialButton>(R.id.importBtn).setOnClickListener {
             importLauncher.launch(arrayOf("*/*"))
+        }
+    }
+
+    /**
+     * 隐藏的诊断入口：解卦出问题（卡住 / 结果为空 / 明显变慢）时，
+     * 让测试同学打开这里，先把埋点开关点亮，复现一次，再把日志复制或分享回来。
+     * 面板只在第一次点开时构建，之后只是显隐切换，不会重复叠加。
+     */
+    private fun setupDebugSection() {
+        val host = findViewById<LinearLayout>(R.id.debugPanelHost)
+        findViewById<MaterialButton>(R.id.debugLogBtn).setOnClickListener {
+            if (host.childCount == 0) {
+                PerfPanel.attach(this, PerfTrace.lastReport(), host)
+            }
+            host.visibility = if (host.visibility == View.VISIBLE) View.GONE else View.VISIBLE
         }
     }
 

@@ -23,17 +23,24 @@ import kotlinx.coroutines.withContext
 import androidx.appcompat.app.AppCompatActivity
 
 /**
- * debug 专用：结果页底部的性能追踪面板。
+ * 诊断面板：看解卦每一段的耗时、复制报告、把完整日志文件分享出去。
  *
- * 三件事：看本次解卦每一段的耗时、复制报告、把完整日志文件分享出去。
- * 只在 BuildConfig.DEBUG 的包里有入口，release 包不显示。
+ * 入口藏在设置页最下面的「日志与诊断」里（设置页本身也要长按首页「我的」才进得来），
+ * 界面上看不出有这些东西，不影响普通用户；发给测试同学时让他们在这里把日志发回来即可。
+ * 面板里还有基准套件，用于实机对比"思考开关/线程数"这类参数。
  */
 object PerfPanel {
 
     private const val BENCH_IDLE = "跑基准套件（4 组各 96 token，约 2 分钟，跑完全部日志自动进剪贴板）"
 
-    fun attach(activity: AppCompatActivity, report: String) {
-        val root = activity.findViewById<LinearLayout>(R.id.resultRoot) ?: return
+    /**
+     * 把面板挂到 [container] 里；不传则退回结果页的根容器。
+     * 面板整体（含开关、报告、按钮）都是运行时拼的，布局文件里只需要一个空容器。
+     */
+    fun attach(activity: AppCompatActivity, report: String, container: LinearLayout? = null) {
+        val root = container
+            ?: activity.findViewById<LinearLayout>(R.id.resultRoot)
+            ?: return
         val dp = activity.resources.displayMetrics.density
         fun px(v: Int) = (v * dp).toInt()
 
@@ -48,7 +55,7 @@ object PerfPanel {
         }
 
         card.addView(TextView(activity).apply {
-            text = "⚙ 性能追踪（debug 包专有 · 默认关闭）"
+            text = "⚙ 性能追踪（默认关闭）"
             setTextColor(Color.parseColor("#8C2B22"))
             textSize = 13f
             setTypeface(typeface, Typeface.BOLD)
@@ -224,7 +231,7 @@ object PerfPanel {
         root.addView(card)
     }
 
-    /** debug 面板里的基准测试需要模型已下载，否则给出明确提示。 */
+    /** 面板里的基准测试需要模型已下载，否则给出明确提示。 */
     private suspend fun ensureModelReady(context: Context) {
         if (!ModelManager.isDownloaded(context)) {
             throw IllegalStateException("本地模型尚未下载，请先到设置页下载")

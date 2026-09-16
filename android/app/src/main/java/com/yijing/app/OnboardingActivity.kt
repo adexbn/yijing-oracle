@@ -1,5 +1,6 @@
 package com.yijing.app
 
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
@@ -32,12 +33,34 @@ import kotlinx.coroutines.withContext
 class OnboardingActivity : AppCompatActivity() {
 
     companion object {
-        /**
-         * 用户主动跳过初始化。
-         * MainActivity 据此判断：模型没下载也不再把人推回初始化页，避免"卡死"在引导页。
-         */
+        private const val PREFS = "yijing_onboarding"
+        private const val KEY_SKIPPED = "skipped"
+
+        /** 进程内缓存，省掉每次读 SP。 */
         @Volatile
-        var skipped = false
+        private var skippedInProcess = false
+
+        /**
+         * 用户是否已经主动跳过首次初始化。
+         *
+         * 这个标记必须是**持久化**的：MainActivity 每次 onCreate 都会据此判断是否把人推回本页，
+         * 而本页一旦被 finish（点跳过、按返回），MainActivity 就是全新实例。
+         * 只存在内存里的话，跳过 → 进主界面 → 立刻又被推回来 → 重新开始下载，
+         * 用户点了取消再跳过还是同一圈，看上去就是"取消下载后卡在死循环"。
+         */
+        fun hasSkipped(context: Context): Boolean =
+            skippedInProcess ||
+                context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                    .getBoolean(KEY_SKIPPED, false)
+
+        /** 记下"用户已跳过"，并落盘，之后任何一次冷启动都不再自动进本页。 */
+        private fun markSkipped(context: Context) {
+            skippedInProcess = true
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(KEY_SKIPPED, true)
+                .apply()
+        }
     }
 
     private lateinit var taiji: TaijiProgressView
@@ -81,7 +104,7 @@ class OnboardingActivity : AppCompatActivity() {
         taiji.start()
         retryBtn.setOnClickListener { begin() }
         cancelBtn.setOnClickListener { cancelDownload() }
-        skipBtn.setOnClickListener { goMain() }
+        skipBtn.setOnClickListener { skipToMain() }
 
         // 返回键 = 先跳过初始化直接进 App（模型日后可在设置里下载），不困在这一页。
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -94,8 +117,7 @@ class OnboardingActivity : AppCompatActivity() {
                         Toast.LENGTH_LONG
                     ).show()
                 }
-                skipped = true
-                goMain()
+                skipToMain()
             }
         })
 
@@ -210,6 +232,18 @@ class OnboardingActivity : AppCompatActivity() {
         status.text = "下载中"
         // 圆环与太极同步生长，和 iOS 的 ringView 一致
         taiji.setProgress(p / 100f)
+    }
+
+    /**
+     * 用户明确表示"先跳过"（点按钮或按返回键）。
+     * 先把标记落盘再进主界面，否则 MainActivity 会立刻把本页又拉起来，形成死循环。
+     */
+    private fun skipToMain() {
+        running = false
+        job?.cancel()
+        job = null
+        markSkipped(this)
+        goMain()
     }
 
     private fun goMain() {

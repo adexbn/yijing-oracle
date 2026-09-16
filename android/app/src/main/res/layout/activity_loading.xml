@@ -7,6 +7,7 @@
     android:background="@color/paper"
     android:paddingHorizontal="32dp">
 
+    <!-- 140dp 与 iOS LoadingView 里 BrushWritingView 的 frame 完全一致 -->
     <com.yijing.app.ui.BrushWritingView
         android:id="@+id/loadingBrush"
         android:layout_width="140dp"
@@ -15,19 +16,17 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="36dp"
-        android:letterSpacing="0.04"
-        android:text="正在推演卦象…"
-        android:textColor="@color/ink"
-        android:textSize="19sp"
-        android:textStyle="bold" />
+        android:layout_marginTop="24dp"
+        android:text="正在解卦…"
+        android:textColor="@color/ink_muted"
+        android:textSize="14sp" />
 
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
-        android:letterSpacing="0.02"
-        android:text="心诚则灵，稍候片刻"
+        android:layout_marginTop="8dp"
+        android:alpha="0.75"
+        android:text="卦象已定，正在推演爻辞与解读"
         android:textColor="@color/ink_muted"
-        android:textSize="14sp" />
+        android:textSize="12sp" />
 </LinearLayout>

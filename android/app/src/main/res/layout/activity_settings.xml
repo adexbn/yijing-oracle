@@ -252,5 +252,46 @@
             android:text="API Key 仅保存在本机，起卦时可选择是否联网解读"
             android:textColor="@color/ink_muted"
             android:textSize="12sp" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="28dp"
+            android:background="@color/ink_muted"
+            android:alpha="0.2" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="日志与诊断（测试用，无需理会）"
+            android:textColor="@color/ink_muted"
+            android:textSize="13sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="解卦异常、卡顿或结果为空时，打开 debug 日志把记录发回即可定位。默认不记录，不影响速度。"
+            android:textColor="@color/ink_muted"
+            android:textSize="12sp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/debugLogBtn"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:layout_marginTop="10dp"
+            android:backgroundTint="@color/brand"
+            android:text="Debug 日志"
+            android:textColor="@color/paper"
+            android:textSize="14sp" />
+
+        <!-- 面板本身是运行时拼出来的，这里只留一个容器 -->
+        <LinearLayout
+            android:id="@+id/debugPanelHost"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone" />
     </LinearLayout>
 </ScrollView>

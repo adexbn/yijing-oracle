@@ -45,7 +45,8 @@ class MainActivity : AppCompatActivity() {
 
         // 首次使用（本地模型还不存在）先走初始化页：自动下载模型并预热。
         // 放在 setContentView 之前，避免主界面一闪而过。
-        if (!ModelManager.isDownloaded(this) && !OnboardingActivity.skipped) {
+        // 用户已经跳过一次就不再自动推过去，否则"取消下载 → 跳过 → 又被拉回下载页"会无限循环。
+        if (!ModelManager.isDownloaded(this) && !OnboardingActivity.hasSkipped(this)) {
             startActivity(Intent(this, OnboardingActivity::class.java))
             finish()
             return

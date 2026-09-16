@@ -11,7 +11,6 @@ import com.yijing.app.core.XiangYi
 import com.yijing.app.core.YaoDb
 import com.yijing.app.ui.CompassView
 import com.yijing.app.ui.HexagramLinesView
-import com.yijing.app.ui.PerfPanel
 
 class ResultActivity : AppCompatActivity() {
 
@@ -127,12 +126,7 @@ class ResultActivity : AppCompatActivity() {
             }
         }
 
-        // debug 包：底部追加调试面板（release 包 BuildConfig.DEBUG=false，不显示）。
-        // 埋点默认关闭，面板本身要一直挂出来，否则没有入口打开开关。
-        if (BuildConfig.DEBUG) {
-            val perf = intent.getStringExtra("aiPerf")
-                ?: com.yijing.app.core.PerfTrace.lastReport()
-            PerfPanel.attach(this, perf)
-        }
+        // 诊断面板不再挂在结果页（普通用户不该看到），
+        // 统一挪到隐藏的设置页「日志与诊断」里，见 SettingsActivity.setupDebugSection。
     }
 }

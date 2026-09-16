@@ -10,25 +10,29 @@ android {
         applicationId = "com.yijing.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 3
-        versionName = "1.2"
-    }
-
-    buildFeatures {
-        // PerfPanel 用 BuildConfig.DEBUG 决定调试图标是否挂出来
-        //（埋点本身另有开关，默认关闭，见 PerfTrace.enabled）
-        buildConfig = true
+        versionCode = 4
+        versionName = "1.3"
     }
 
     buildTypes {
         debug {
-            // debug 包：结果页底部挂调试面板，版本号带 -debug 便于区分；
-            // 但埋点默认仍是关闭的，需要时在面板里手动打开。
             isMinifyEnabled = false
             versionNameSuffix = "-debug"
         }
+
+        /**
+         * 发给测试同学用的包。
+         *
+         * 走 release 而不是 debug：BuildConfig.DEBUG=false、不带 `-debug` 版本后缀、
+         * 清单里也没有 debuggable，别人拿到手就是普通应用，看不出是内部测试版。
+         * 诊断入口在隐藏的设置页里（长按首页「我的」→「日志与诊断」）。
+         *
+         * 这里用默认的 debug 签名密钥签名，是为了让测试同学能在旧包上直接覆盖安装
+         * （同 applicationId + 同签名才能原地升级）。正式上架前再换成正式密钥。
+         */
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
