@@ -9,6 +9,7 @@ import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Bundle
+import android.os.SystemClock
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -24,6 +25,7 @@ import com.yijing.app.core.HistoryStore
 import com.yijing.app.core.LocalAiClient
 import com.yijing.app.core.LunarCalendar
 import com.yijing.app.core.ModelManager
+import com.yijing.app.core.PerfTrace
 import com.yijing.app.core.SolarTime
 import com.yijing.app.core.Trigram
 import com.yijing.app.ui.SealButton
@@ -113,10 +115,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun castNow() {
-        openResult(castByTime(Calendar.getInstance()))
+        val scope = PerfTrace.beginSession("起卦 → 出结果")
+        val t0 = SystemClock.elapsedRealtime()
+        val r = castByTime(Calendar.getInstance())
+        PerfTrace.mark(scope, "卦象计算", SystemClock.elapsedRealtime() - t0)
+        openResult(r)
     }
 
     private fun openResult(result: DivinationResult) {
+        val scope = PerfTrace.currentSession()
+        val t0 = SystemClock.elapsedRealtime()
         val question = questionInput.text.toString().trim()
         val adjusted = Divination.adjustByQuestion(result, question)
         HistoryStore.save(
@@ -124,6 +132,11 @@ class MainActivity : AppCompatActivity() {
             adjusted.original.name, adjusted.changed.name,
             adjusted.movingLine, adjusted.original.judgment
         )
+        PerfTrace.mark(scope, "存历史 + 组装跳转", SystemClock.elapsedRealtime() - t0)
+        val pre = LocalAiClient.lastPreloadFinishedAt
+        PerfTrace.mark(scope, "起卦时的模型状态", 0,
+            if (pre > 0) "首页预加载已完成（${(SystemClock.elapsedRealtime() - pre) / 1000}s 前）"
+            else "预加载还没完成，本次解卦要先等 1.2GB 读盘")
         if (question.isNotBlank()) {
             // 有提问：先进等待页，本地/云端解读跑完再进结果页，一次性呈现完整结果
             val intent = Intent(this, LoadingActivity::class.java)

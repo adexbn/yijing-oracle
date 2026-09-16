@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 日志写在 getExternalFilesDir(null)/perf-trace.log，即 Android/data/com.yijing.app/files/ -->
+    <external-files-path
+        name="perf"
+        path="." />
+</paths>

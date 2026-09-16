@@ -14,7 +14,19 @@ android {
         versionName = "1.2"
     }
 
+    buildFeatures {
+        // PerfPanel 用 BuildConfig.DEBUG 决定调试图标是否挂出来
+        //（埋点本身另有开关，默认关闭，见 PerfTrace.enabled）
+        buildConfig = true
+    }
+
     buildTypes {
+        debug {
+            // debug 包：结果页底部挂调试面板，版本号带 -debug 便于区分；
+            // 但埋点默认仍是关闭的，需要时在面板里手动打开。
+            isMinifyEnabled = false
+            versionNameSuffix = "-debug"
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
