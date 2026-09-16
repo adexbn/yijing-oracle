@@ -94,6 +94,33 @@
             android:textColor="@color/cinnabar"
             android:textSize="14sp"
             android:visibility="gone" />
+
+        <!-- 下载中的「取消」：网络不通时不想干等，一击即停。 -->
+        <TextView
+            android:id="@+id/onboardingCancel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="26dp"
+            android:background="@drawable/bg_cancel_button"
+            android:paddingHorizontal="26dp"
+            android:paddingVertical="11dp"
+            android:text="取消下载"
+            android:textColor="@color/ink_muted"
+            android:textSize="14sp"
+            android:visibility="gone" />
+
+        <!-- 失败/取消后的出口：先跳过，稍后在设置里下载。 -->
+        <TextView
+            android:id="@+id/onboardingSkip"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="8dp"
+            android:text="先跳过，稍后再下载"
+            android:textColor="@color/ink_muted"
+            android:textSize="13sp"
+            android:visibility="gone" />
     </LinearLayout>
 
     <TextView

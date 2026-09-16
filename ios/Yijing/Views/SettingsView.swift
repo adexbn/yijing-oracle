@@ -116,7 +116,7 @@ struct SettingsView: View {
                     }
 
                     linkRow("官方下载", ModelManager.modelURL)
-                    linkRow("镜像下载", ModelManager.modelURLMirror)
+                    linkRow("备用下载", ModelManager.modelURLMirror)
                 }
                 .padding(16)
                 .cardStyle()

@@ -12,17 +12,22 @@ import androidx.lifecycle.lifecycleScope
 import com.yijing.app.core.LocalAiClient
 import com.yijing.app.core.ModelManager
 import com.yijing.app.ui.BrushWritingView
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
  * 首次使用初始化页。
  *
- * 本地模型不随 APK 打包，所以第一次打开时：自动从国内镜像下载模型（约 1.2GB），
+ * 本地模型不随 APK 打包，所以第一次打开时：自动下载模型（约 1.2GB，主站不通自动换备用源），
  * 下载完再把模型读进内存，之后进入主界面就能直接解卦、全程离线。
  * 模型存放在应用专属外部目录（/sdcard/Android/data/包名/files/models），
  * 覆盖安装、升级、卸载后重装都不会重复下载。
+ *
+ * 网络不稳时不想干等：下载中始终有「取消下载」，点击即时断开连接并清掉半成品；
+ * 失败或取消后都有「重新尝试」和「先跳过，稍后再下载」两个出口，不会把人困在这一页。
  */
 class OnboardingActivity : AppCompatActivity() {
 
@@ -41,9 +46,20 @@ class OnboardingActivity : AppCompatActivity() {
     private lateinit var percent: TextView
     private lateinit var progressBar: ProgressBar
     private lateinit var retryBtn: TextView
+    private lateinit var cancelBtn: TextView
+    private lateinit var skipBtn: TextView
 
     /** 防止重复启动（重试、返回后又进入）。 */
     private var running = false
+
+    /** 当前这次「下载 + 预载」的协程，点取消时 cancel 它。 */
+    private var job: Job? = null
+
+    /**
+     * 轮次号。重试或取消后旧协程可能才刚抛异常回来，
+     * 用它把过期回调挡掉，免得旧任务把新任务的界面状态改掉。
+     */
+    private var generation = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,17 +71,22 @@ class OnboardingActivity : AppCompatActivity() {
         percent = findViewById(R.id.onboardingPercent)
         progressBar = findViewById(R.id.onboardingProgress)
         retryBtn = findViewById(R.id.onboardingRetry)
+        cancelBtn = findViewById(R.id.onboardingCancel)
+        skipBtn = findViewById(R.id.onboardingSkip)
 
         brush.start()
         retryBtn.setOnClickListener { begin() }
+        cancelBtn.setOnClickListener { cancelDownload() }
+        skipBtn.setOnClickListener { goMain() }
 
         // 返回键 = 先跳过初始化直接进 App（模型日后可在设置里下载），不困在这一页。
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 if (running) {
+                    job?.cancel()
                     Toast.makeText(
                         this@OnboardingActivity,
-                        "已跳过初始化，可稍后在应用内下载模型",
+                        "已取消下载，可稍后在应用内下载模型",
                         Toast.LENGTH_LONG
                     ).show()
                 }
@@ -86,8 +107,11 @@ class OnboardingActivity : AppCompatActivity() {
     private fun begin() {
         if (running) return
         running = true
+        val gen = ++generation
 
         retryBtn.visibility = View.GONE
+        skipBtn.visibility = View.GONE
+        cancelBtn.visibility = View.VISIBLE
         progressBar.visibility = View.VISIBLE
         percent.visibility = View.VISIBLE
         progressBar.progress = 0
@@ -95,17 +119,17 @@ class OnboardingActivity : AppCompatActivity() {
         headline.text = "首次使用需要初始化"
         detail.text = "正在准备解卦所需的本地模型"
 
-        lifecycleScope.launch {
+        job = lifecycleScope.launch {
             try {
                 if (!ModelManager.isDownloaded(this@OnboardingActivity)) {
-                    detail.text = "正在从国内镜像下载模型（约 1.2GB）\n请保持网络畅通，仅需一次"
-                    withContext(Dispatchers.IO) {
-                        ModelManager.download(applicationContext) { pct ->
-                            runOnUiThread { showProgress(pct) }
-                        }
+                    detail.text = "正在下载解卦模型（约 1.2GB）\n请保持网络畅通，仅需一次"
+                    ModelManager.download(applicationContext) { pct ->
+                        if (gen == generation) runOnUiThread { showProgress(pct) }
                     }
                 }
 
+                // 载入内存是 C 层调用，打断不了，所以先收回取消入口，免得点了没反应。
+                cancelBtn.visibility = View.GONE
                 headline.text = "即将完成"
                 detail.text = "正在把模型载入内存，稍候即可解卦"
                 progressBar.progress = 100
@@ -115,18 +139,48 @@ class OnboardingActivity : AppCompatActivity() {
                 }
 
                 goMain()
+            } catch (e: CancellationException) {
+                showCancelled(gen)
+                throw e
             } catch (e: Exception) {
-                running = false
-                headline.text = "初始化未完成"
-                detail.text = buildString {
-                    append(e.message ?: "下载失败")
-                    append("\n请检查网络后重试，或改用 Wi-Fi 再试一次")
-                }
-                progressBar.visibility = View.GONE
-                percent.visibility = View.GONE
-                retryBtn.visibility = View.VISIBLE
+                showFailed(gen, e.message ?: "下载失败")
             }
         }
+    }
+
+    /** 取消下载：立刻断开连接，不改「已跳过」状态，用户可重试或跳过。 */
+    private fun cancelDownload() {
+        if (!running) return
+        detail.text = "正在取消…"
+        job?.cancel()
+    }
+
+    private fun showCancelled(gen: Int) {
+        if (gen != generation) return
+        running = false
+        job = null
+        if (isFinishing || isDestroyed) return
+        cancelBtn.visibility = View.GONE
+        progressBar.visibility = View.GONE
+        percent.visibility = View.GONE
+        headline.text = "已取消下载"
+        detail.text = "模型还没下载完。可以重新下载，或先跳过、稍后在设置里下载"
+        retryBtn.visibility = View.VISIBLE
+        skipBtn.visibility = View.VISIBLE
+    }
+
+    private fun showFailed(gen: Int, message: String) {
+        if (gen != generation) return
+        running = false
+        job = null
+        if (isFinishing || isDestroyed) return
+        cancelBtn.visibility = View.GONE
+        progressBar.visibility = View.GONE
+        percent.visibility = View.GONE
+        headline.text = "初始化未完成"
+        detail.text = "$message\n请检查网络后重试，或改用 Wi-Fi 再试一次"
+        retryBtn.visibility = View.VISIBLE
+        skipBtn.visibility = View.VISIBLE
     }
 
     /** 进度收尾：留 1% 给"载入内存"阶段，避免卡在 100% 让人以为死了。 */

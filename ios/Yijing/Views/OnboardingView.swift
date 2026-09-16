@@ -3,9 +3,10 @@ import SwiftUI
 /// 首次启动初始化页。
 ///
 /// 为什么要有这一页：解卦用的本地小模型（约 1.2GB）不打进安装包，否则 App 体积无法接受。
-/// 所以第一次使用必须先把模型拿到本地。这里做两件事：
-/// 1. 从国内镜像（hf-mirror.com）自动下载，速度远快于原站；
-/// 2. 用太极 + 环形进度把等待过程做得好看一些，并明确告诉用户「只需一次」。
+/// 所以第一次使用必须先把模型拿到本地。这里做三件事：
+/// 1. 自动下载（主站不可达时自动换备用源），失败自动换源；
+/// 2. 用太极 + 环形进度把等待过程做得好看一些，并明确告诉用户「只需一次」；
+/// 3. 下载中随时可「取消」、失败/取消后可重试或先跳过，不把人困在这一页。
 struct OnboardingView: View {
     /// 初始化完成回调（下载成功并预热后调用）。
     var onFinished: () -> Void
@@ -14,12 +15,15 @@ struct OnboardingView: View {
         case preparing      // 检查本地是否已有模型
         case downloading    // 正在下载
         case warming        // 下载完成，正在预热（避免第一次解卦还要等）
+        case cancelled      // 用户主动取消
         case failed(String) // 失败，可重试
     }
 
     @State private var phase: Phase = .preparing
     @State private var progress: Double = 0
     @State private var shown = false
+    /// 当前下载任务；点「取消下载」时 cancel 它，会一路传到 URLSession 的下载任务。
+    @State private var task: Task<Void, Never>?
 
     var body: some View {
         ZStack {
@@ -73,10 +77,44 @@ struct OnboardingView: View {
                         .buttonStyle(.plain)
                     }
                     .padding(.top, 26)
+                } else if case .cancelled = phase {
+                    VStack(spacing: 16) {
+                        Button { start() } label: {
+                            Text("重新下载")
+                                .font(.system(size: 15))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 30)
+                                .padding(.vertical, 11)
+                                .background(Capsule().fill(Theme.cinnabar))
+                        }
+                        .buttonStyle(.plain)
+
+                        Button { onFinished() } label: {
+                            Text("暂时跳过，稍后再下载")
+                                .font(.system(size: 13))
+                                .foregroundColor(Theme.inkMuted)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.top, 26)
                 } else {
                     progressBlock
                         .padding(.top, 30)
                         .padding(.horizontal, 56)
+
+                    // 下载中随时可停：网络不稳时不必干等失败。
+                    if case .downloading = phase {
+                        Button { cancel() } label: {
+                            Text("取消下载")
+                                .font(.system(size: 13))
+                                .foregroundColor(Theme.inkMuted)
+                                .padding(.horizontal, 22)
+                                .padding(.vertical, 8)
+                                .overlay(Capsule().stroke(Theme.divider, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 22)
+                    }
                 }
 
                 Spacer(minLength: 0)
@@ -158,6 +196,7 @@ struct OnboardingView: View {
         case .preparing: return "首次使用需要初始化"
         case .downloading: return "首次使用需要初始化"
         case .warming: return "初始化即将完成"
+        case .cancelled: return "已取消下载"
         case .failed: return "初始化未完成"
         }
     }
@@ -167,9 +206,11 @@ struct OnboardingView: View {
         case .preparing:
             return "正在检查本地解卦模型…"
         case .downloading:
-            return "正在下载解卦模型（约 1.2GB，国内镜像加速）\n请保持网络连接，稍候片刻"
+            return "正在下载解卦模型（约 1.2GB）\n请保持网络连接；网络不稳可点下方取消，稍后再试"
         case .warming:
             return "正在载入模型，之后每次解卦都能秒出结果"
+        case .cancelled:
+            return "下载已取消，模型尚未下载完。\n可以重新下载，或先跳过、稍后在设置里下载。"
         case .failed(let msg):
             return "\(msg)\n请检查网络后点击下方重试，建议在 Wi-Fi 环境下进行。"
         }
@@ -180,6 +221,7 @@ struct OnboardingView: View {
         case .preparing: return "准备中"
         case .downloading: return "下载中"
         case .warming: return "载入模型"
+        case .cancelled: return "已取消"
         case .failed: return "未完成"
         }
     }
@@ -188,10 +230,11 @@ struct OnboardingView: View {
 
     @MainActor
     private func start() {
+        task?.cancel()
         phase = .preparing
         progress = 0
 
-        Task {
+        task = Task {
             if ModelManager.isDownloaded() {
                 await finalize()
                 return
@@ -205,11 +248,25 @@ struct OnboardingView: View {
                     }
                 }
                 await finalize()
+            } catch is CancellationError {
+                phase = .cancelled
             } catch {
-                if Task.isCancelled { return }
-                phase = .failed(error.localizedDescription)
+                // 取消时 URLSession 有时会以 NSURLErrorCancelled 抛出，一并归到「已取消」
+                if Task.isCancelled || (error as NSError).code == NSURLErrorCancelled {
+                    phase = .cancelled
+                } else {
+                    phase = .failed(error.localizedDescription)
+                }
             }
         }
+    }
+
+    /// 用户主动取消：取消 Task 会一路传到 URLSession 的下载任务，立即断开连接。
+    @MainActor
+    private func cancel() {
+        task?.cancel()
+        task = nil
+        phase = .cancelled
     }
 
     /// 下载完成（或本地已有）后预热模型，再回到主界面。
