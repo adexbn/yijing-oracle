@@ -5,7 +5,7 @@
 > 规则：只写事实，不写推测；结论必须标注「已验证」或「估计」；数字要带口径。
 
 - 最后更新：2026-09-17
-- 最近提交：`28ef289`（分支 `main`；更准确以 `git log` 为准）
+- 最近提交：`050032f`（分支 `main`；更准确以 `git log` 为准）
 - 远端：https://github.com/adexbn/yijing-oracle （public）
 - 本机仓库路径：工作区下的 `yijing-ios/`（内含 `ios/` 与 `android/`）
 
@@ -95,7 +95,7 @@ CI 细节：`.github/workflows/ios.yml`（workflow `iOS Build`，id `358457133`�
 
 | 日期 | 提交 | 内容 | 验证 |
 | --- | --- | --- | --- |
-| 2026-09-17 | （本次提交） | **Android 同步 P3 输入拦截**：新增 `android/app/src/main/java/com/yijing/app/core/InputGuard.kt`（与 Swift 同源同表，另补偿 Java 正则 ASCII 语义差异）；`MainActivity.openResult()` 改三支路由（危险→结果页直出安全提示不调模型 / 非有效→等待页带软引导 / 其余照常）；`LoadingActivity` 增 `guardHint` 并在云端、本地两条 AI 路径前置系统提示词 | ① 本机 `gradlew --offline assembleDebug` **BUILD SUCCESSFUL**（1m49s）；② 编译真实 `InputGuard.kt` 在 JVM 跑 382 条语料，与参考实现**判定 0 差异** |
+| 2026-09-17 | `050032f` | **Android 同步 P3 输入拦截**：新增 `android/app/src/main/java/com/yijing/app/core/InputGuard.kt`（与 Swift 同源同表，另补偿 Java 正则 ASCII 语义差异）；`MainActivity.openResult()` 改三支路由（危险→结果页直出安全提示不调模型 / 非有效→等待页带软引导 / 其余照常）；`LoadingActivity` 增 `guardHint` 并在云端、本地两条 AI 路径前置系统提示词 | ① 本机 `gradlew --offline assembleDebug` **BUILD SUCCESSFUL**（1m49s）；② 编译真实 `InputGuard.kt` 在 JVM 跑 382 条语料，与参考实现**判定 0 差异**；③ CI `Android Build` **success**（1m17s） |
 | 2026-09-17 | `28ef289`、`9f7ff52` | 建立文档体系：新增本文件、`AGENTS.md`、`.trae/rules/progress-log.md`、`.trae/rules/git-commit-message.md`；README 订正产物名并补「文档」一节 | 纯文档改动，未触发 CI；`git status` 确认改动范围 |
 | 2026-09-17 | `189af24` | 修 `InputGuard.swift` 第 178 行标点字面量未转义导致的编译失败 | CI `iOS Build #26`（run `35187727041`）11 步全绿，产出 `Yijing-adhoc-ipa` 3.34MB |
 | 2026-09-17 | `3c0b980` | iOS 接入输入有效性拦截：新增 `ios/Yijing/Services/InputGuard.swift`（P3 规则闸 + 变体/谐音等价表），`ios/Yijing/Flow/CastFlow.swift` 接上路由与提示 | 静态自检 + 两端等价性 0 差异；首次 CI 因上述字面量问题失败 |
