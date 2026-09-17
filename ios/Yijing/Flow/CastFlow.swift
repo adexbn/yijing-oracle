@@ -19,6 +19,7 @@ final class CastFlow: ObservableObject {
     @Published var error = ""
     @Published var hint = ""
     @Published var isGenerating = false
+    @Published var guardHint = ""
 
     private var started = false
 
@@ -32,6 +33,7 @@ final class CastFlow: ObservableObject {
         mode = ""
         error = ""
         hint = ""
+        guardHint = ""
         started = false
 
         HistoryStore.save(
@@ -46,7 +48,17 @@ final class CastFlow: ObservableObject {
         if q.isEmpty {
             path.append(Route.result)
         } else {
-            path.append(Route.loading)
+            switch InputGuard.classify(q) {
+            case .danger:
+                reply = InputGuard.DANGER_REPLY
+                mode = "安全提示"
+                path.append(Route.result)
+            case .invalid:
+                guardHint = InputGuard.P_INVALID
+                path.append(Route.loading)
+            case .valid:
+                path.append(Route.loading)
+            }
         }
     }
 
@@ -60,10 +72,13 @@ final class CastFlow: ObservableObject {
 
         if settings.cloudOn {
             mode = "大师解卦"
-            let (system, user) = AiClient.promptOf(
+            var (system, user) = AiClient.promptOf(
                 question: question, original: r.original, changed: r.changed,
                 movingLine: r.movingLine, yaoText: yao
             )
+            if !guardHint.isEmpty {
+                system = guardHint + "\n" + system
+            }
             Task {
                 defer { isGenerating = false }
                 do {
@@ -78,10 +93,13 @@ final class CastFlow: ObservableObject {
         } else {
             mode = "解卦"
             hint = (settings.config.cloudEnabled && !settings.hasKey) ? "未配置 API Key，已改用本地模型" : ""
-            let (system, user) = LocalAiClient.promptOf(
+            var (system, user) = LocalAiClient.promptOf(
                 question: question, original: r.original, changed: r.changed,
                 movingLine: r.movingLine, yaoText: yao
             )
+            if !guardHint.isEmpty {
+                system = guardHint + "\n" + system
+            }
             Task {
                 defer { isGenerating = false }
                 do {
