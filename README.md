@@ -31,7 +31,7 @@ yijing-oracle/
 │   ├── settings.gradle.kts
 │   └── build.gradle.kts
 └── .github/workflows/
-    ├── ios.yml                 # iOS 编译验证 + 导出未签名 IPA
+    ├── ios.yml                 # iOS 编译验证 + Ad-hoc 签名并打包 IPA
     └── android.yml             # Android 编译验证（assembleDebug）
 ```
 
@@ -65,7 +65,7 @@ open Yijing.xcodeproj
 
 | 工作流 | 触发条件 | 内容 | 产物 |
 | --- | --- | --- | --- |
-| `iOS Build` | `ios/**` 变更 | `xcodegen generate` → 不签名编译 → 不签名归档 | `Yijing-unsigned-ipa`（14 天） |
+| `iOS Build` | `ios/**` 变更 | `xcodegen generate` → 不签名编译 → 归档 → Ad-hoc 签名 → 打包 | `Yijing-adhoc-ipa`（14 天） |
 | `Android Build` | `android/**` 变更 | JDK 21 + SDK 37 → `assembleDebug` | `Yijing-debug-apk`（14 天） |
 
 两者也支持在 Actions 页面手动触发（`workflow_dispatch`）。
@@ -74,9 +74,16 @@ open Yijing.xcodeproj
 
 iOS 的任何安装都必须有 Apple 签名，这是系统硬性要求，与是否走 TestFlight 无关。个人自用可走零成本路径：
 
-1. 从 `iOS Build` 的产物下载 `Yijing-unsigned.ipa`（未签名）。
+1. 从 `iOS Build` 的产物下载 `Yijing-adhoc-ipa`（解包后是 `Yijing-adhoc.ipa`，已做 Ad-hoc 签名，本机重签时任意 Apple ID 均可）。
 2. 在 Windows 上用 **Sideloadly**（或 AltStore / 爱思助手）以自己的 Apple ID 重签并安装。
 3. 免费 Apple ID 签名有效期 **7 天**，到期需重签（Sideloadly 支持自动续签）；同时最多同时安装 3 个自签 App。
+
+## 文档
+
+- [`DEV_STATUS.md`](DEV_STATUS.md) —— 开发状态与进展台账（**唯一权威**）。当前做到哪、待办是什么、
+  验证口径、踩过的坑、逐条进展日志都在这里。上下文丢失或换设备后，先读它。
+- [`AGENTS.md`](AGENTS.md) —— 给 AI 智能体的项目行为指引（TraeCode 及其他支持 `AGENTS.md` 的 IDE 通用）。
+- `.trae/rules/` —— Trae 项目规则（过程留痕约定、提交信息规范）。
 
 ## 备注
 
