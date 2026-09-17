@@ -5,7 +5,7 @@
 > 规则：只写事实，不写推测；结论必须标注「已验证」或「估计」；数字要带口径。
 
 - 最后更新：2026-09-17
-- 当前 HEAD：`189af24`（分支 `main`，已推送）
+- 最近提交：`9f7ff52`（分支 `main`；更准确以 `git log` 为准）
 - 远端：https://github.com/adexbn/yijing-oracle （public）
 - 本机仓库路径：工作区下的 `yijing-ios/`（内含 `ios/` 与 `android/`）
 
@@ -83,6 +83,7 @@ CI 细节：`.github/workflows/ios.yml`（workflow `iOS Build`，id `358457133`�
 
 | 日期 | 提交 | 内容 | 验证 |
 | --- | --- | --- | --- |
+| 2026-09-17 | （本次提交） | 建立文档体系：新增本文件、`AGENTS.md`、`.trae/rules/progress-log.md`、`.trae/rules/git-commit-message.md`；README 订正产物名并补「文档」一节 | 纯文档改动，未触发 CI；`git status` 确认改动范围 |
 | 2026-09-17 | `189af24` | 修 `InputGuard.swift` 第 178 行标点字面量未转义导致的编译失败 | CI `iOS Build #26`（run `35187727041`）11 步全绿，产出 `Yijing-adhoc-ipa` 3.34MB |
 | 2026-09-17 | `3c0b980` | iOS 接入输入有效性拦截：新增 `ios/Yijing/Services/InputGuard.swift`（P3 规则闸 + 变体/谐音等价表），`ios/Yijing/Flow/CastFlow.swift` 接上路由与提示 | 静态自检 + 两端等价性 0 差异；首次 CI 因上述字面量问题失败 |
 | 2026-09-16 | `d1b59c6` | Android 修取消下载死循环、推演页动画对齐 iOS、收回调试入口 | CI |
@@ -99,3 +100,25 @@ CI 细节：`.github/workflows/ios.yml`（workflow `iOS Build`，id `358457133`�
 1. 任何实质改动完成后：更新第 1、2 节的状态，并在第 6 节表格**加一行**（日期 / 提交号 / 内容 / 验证方式）。
 2. 出现新坑或新事故：补进第 5 节。
 3. iPhone 自用安装的完整步骤见 `README.md`。
+
+## 8. 状态记录挂在哪（Trae 机制）
+
+上下文压缩是必然会发生的（对话窗口超限后，早期工具输出会被丢弃并压缩成摘要），**唯一可靠的状态载体是文件**。本项目挂了三层：
+
+| 位置 | 作用范围 | 说明 |
+| --- | --- | --- |
+| `DEV_STATUS.md`（本文件） | 本仓库 | 状态与进展的唯一权威，人手/智能体都读它 |
+| `AGENTS.md`（仓库根） | 本仓库 | 跨 IDE 通用的智能体指引（`CLAUDE.md` 亦兼容）。**需在 设置 → 规则 → 导入设置 打开「将 AGENTS.md 包含在上下文中」才进上下文** |
+| `.trae/rules/progress-log.md` | 本仓库 | Trae 项目规则，`alwaysApply: true` 始终生效；`.trae/rules/git-commit-message.md` 用 `scene: git_message` 管提交信息 |
+| `%userprofile%/.trae-cn/user_rules/` | **所有项目** | Trae 全局规则（本机已放入 `progress-log.md`：每步留痕、重大进展归档、结论分「已验证/估计」）；全局记忆另有 `%userprofile%/.trae-cn/memory/user_profile.md` |
+
+会话级记忆由 Trae 自动维护在 `%userprofile%/.trae-cn/memory/projects/{项目路径}/` 下（按日 `topics.md` + `session_memory_*.jsonl`），属自动产物，不作为权威来源。
+
+> 提示：新建或修改规则后，建议**开新对话**再用，避免旧上下文与新规则打架。
+
+### 为什么压缩后「没了」、怎么避免
+
+- **原因**：模型上下文窗口有限。对话变长后，系统会把早期内容压成摘要，**当时的工具原始输出（编译日志、
+  CI 返回、文件内容）被丢弃**；切换模型/新会话更是完全从零开始。压缩本身是正常机制，丢失的是「只在对话里说过、没写进文件」的信息。
+- **避免**：① 关键结论当场写进 `DEV_STATUS.md`；② 长输出先落文件再读摘要；③ 会话开头先读 `DEV_STATUS.md` 再干活；
+  ④ 一次任务收尾前自查该文件是否已同步（见 `.trae/rules/progress-log.md`）。
