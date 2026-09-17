@@ -172,10 +172,20 @@ enum InputGuard {
     private static let CHOICE_ASK = rx(#"(.)(?:还是)?不\1"#)
     private static let IMP_VERB = rx(#"想[^，。！？]{0,3}(考|学|换|搬|辞|离|结|生|做|开|创|投|买|卖|借|还|问|算|签|申请|报名|转|跳)"#)
 
-    // 标点
+    // 标点（与 shouldRemove 的 Unicode 分类判据等价，此处显式列出以便阅读）
     private static let PUNCT: Set<Unicode.Scalar> = {
         var s = Set<Unicode.Scalar>()
-        for ch in " \t\r\n，。！？、；：""''（）《》【】…—～·!?,.;:\"'()[]{}<>-_/\\|@#$%^&*+=~`＄￥" {
+        let chars = " \t\r\n"
+            + "，。！？、；："
+            + "\u{201C}\u{201D}\u{2018}\u{2019}"
+            + "（）《》【】…—～·"
+            + "!?,.;:"
+            + "\"'"
+            + "()[]{}<>"
+            + "-_/\\|"
+            + "@#$%^&*+=~`"
+            + "＄￥"
+        for ch in chars {
             for sc in ch.unicodeScalars { s.insert(sc) }
         }
         return s
