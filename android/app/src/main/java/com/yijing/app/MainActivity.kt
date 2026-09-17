@@ -22,6 +22,7 @@ import com.yijing.app.R
 import com.yijing.app.core.Divination
 import com.yijing.app.core.DivinationResult
 import com.yijing.app.core.HistoryStore
+import com.yijing.app.core.InputGuard
 import com.yijing.app.core.LocalAiClient
 import com.yijing.app.core.LunarCalendar
 import com.yijing.app.core.ModelManager
@@ -139,13 +140,39 @@ class MainActivity : AppCompatActivity() {
             if (pre > 0) "首页预加载已完成（${(SystemClock.elapsedRealtime() - pre) / 1000}s 前）"
             else "预加载还没完成，本次解卦要先等 1.2GB 读盘")
         if (question.isNotBlank()) {
-            // 有提问：先进等待页，本地/云端解读跑完再进结果页，一次性呈现完整结果
-            val intent = Intent(this, LoadingActivity::class.java)
-            intent.putExtra("result", adjusted)
-            intent.putExtra("question", question)
-            startActivity(intent)
+            // 输入有效性拦截（与 iOS 同源同表，见 core/InputGuard.kt）：
+            // 危险输入直接给安全提示、不进模型；非有效提问带软引导进等待页；其余照常。
+            when (val verdict = InputGuard.classify(question)) {
+                is InputGuard.Verdict.Danger -> {
+                    PerfTrace.mark(scope, "输入拦截（危险，未调用模型）", 0, verdict.reason)
+                    val intent = Intent(this, ResultActivity::class.java)
+                    intent.putExtra("result", adjusted)
+                    intent.putExtra("question", question)
+                    intent.putExtra("aiReply", InputGuard.DANGER_REPLY)
+                    intent.putExtra("aiMode", "安全提示")
+                    intent.putExtra("aiError", "")
+                    intent.putExtra("aiHint", "")
+                    intent.putExtra("aiPerf", PerfTrace.report(scope))
+                    startActivity(intent)
+                }
+                is InputGuard.Verdict.Invalid -> {
+                    PerfTrace.mark(scope, "输入拦截（非有效提问，软引导）", 0, verdict.reason)
+                    val intent = Intent(this, LoadingActivity::class.java)
+                    intent.putExtra("result", adjusted)
+                    intent.putExtra("question", question)
+                    intent.putExtra("guardHint", InputGuard.P_INVALID)
+                    startActivity(intent)
+                }
+                else -> {
+                    // 有提问：先进等待页，本地/云端解读跑完再进结果页，一次性呈现完整结果
+                    val intent = Intent(this, LoadingActivity::class.java)
+                    intent.putExtra("result", adjusted)
+                    intent.putExtra("question", question)
+                    startActivity(intent)
+                }
+            }
         } else {
-            // 无提问：四维通用解读同步可得，直接进结果页
+            // 无提问：四维通用解读同步可得，直接进结果页（不做拦截判定）
             val intent = Intent(this, ResultActivity::class.java)
             intent.putExtra("result", adjusted)
             intent.putExtra("question", question)

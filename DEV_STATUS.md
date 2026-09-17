@@ -5,7 +5,7 @@
 > 规则：只写事实，不写推测；结论必须标注「已验证」或「估计」；数字要带口径。
 
 - 最后更新：2026-09-17
-- 最近提交：`9f7ff52`（分支 `main`；更准确以 `git log` 为准）
+- 最近提交：`28ef289`（分支 `main`；更准确以 `git log` 为准）
 - 远端：https://github.com/adexbn/yijing-oracle （public）
 - 本机仓库路径：工作区下的 `yijing-ios/`（内含 `ios/` 与 `android/`）
 
@@ -15,15 +15,14 @@
 
 | 端 | 功能状态 | 编译验证 | 备注 |
 | --- | --- | --- | --- |
-| iOS | 输入有效性拦截（P3 规则闸）已接入，已跑通编译与打包 | ✅ CI 全绿（iOS Build #26） | 产物 `Yijing-adhoc-ipa`，待真机自签安装实测 |
-| Android | 未接入 P3 输入拦截，其余功能与 iOS 对齐 | ✅ CI 可用 | P3 移植待排期 |
+| iOS | 输入有效性拦截（P3 规则闸）已接入 | ✅ CI 全绿（iOS Build #26）；**真机实测通过** | 产物 `Yijing-adhoc-ipa`，已装机运行正常 |
+| Android | 输入有效性拦截（P3 规则闸）已接入，与 iOS 同源同表 | ✅ 本机 `assembleDebug` 通过；382 条语料等价性 0 差异 | 待真机实测 |
 
 ## 2. 进行中 / 待办
 
-1. **真机自签安装实测**：从 iOS Build #26 产物下载 `Yijing-adhoc-ipa`，用 Sideloadly + 自备 Apple ID 重签安装（免费签名 7 天有效）。
-2. **Android 同步 P3 输入拦截**：把 `InputGuard` 的规则闸逻辑移植为 Kotlin，并用同一批语料做两端等价性回归。
-3. **Python 参考实现回写**：把已验证的 P3 补丁写回本机参考实现 `input_guard_sim.py`，保证原型与两端代码同源。
-4. **（悬置）第二道闸**：App 侧本地小模型闸（Qwen3-1.7B）尚未接；只在第一道规则闸漏放时才有必要触发。
+1. **Android 真机实测**：装机验证三条路径 —— 危险输入直达安全提示（不调模型）、非有效提问软引导、正常提问照常解读。
+2. **Python 参考实现回写**：把已验证的 P3 补丁写回本机参考实现 `input_guard_sim.py`，保证原型与两端代码同源。
+3. **（悬置）第二道闸**：App 侧本地小模型闸（Qwen3-1.7B）尚未接；只在第一道规则闸漏放时才有必要触发。
 
 ## 3. 输入拦截（P3）方案与验证口径
 
@@ -41,9 +40,19 @@
 
 > **口径警告**：A/D/E 参与过调参，其数字只能当可行性证据；真正的干净留出集只有 B(40) 与 C(20)。「90% 兜底」是设计目标与估计值，不是已验证结论。
 
-两端等价性：从 Swift 源**自动抽取**种子表与正则（避免手抄漂移），在 Python 里逐句复刻 Swift 流程，与打补丁的参考实现在 382 条语料上逐条对照 —— **判定不一致 0 条**。
+**两端等价性（各自独立验证，目标 0 差异）**：
 
-平台差异的替代方案：Swift 无 `pypinyin` → 用 `DANGER_VARIANTS` 变体/谐音等价表（26 条）顶替音节比对；Swift 无 OpenCC → 同表内含繁体写法。
+| 端 | 验证方式 | 结果 |
+| --- | --- | --- |
+| iOS | 从 Swift 源**自动抽取**种子表与正则（避免手抄漂移），在 Python 里逐句复刻 Swift 流程，与打补丁的参考实现对照 382 条 | 判定不一致 **0** 条 |
+| Android | **直接编译真实 `InputGuard.kt`**（gradle 缓存里的 kotlin-compiler-embeddable，本机无 kotlinc）在 JVM 上跑同一批 382 条 | 判定不一致 **0** 条；各批准确率与参考完全相同（A 100/100、B 40/40、C 20/20、D 120/122、E 86/100） |
+
+> Android 侧另有 30 条「判定一致、但原因文案不同」，差异仅在参考实现多打了相似度数值（如参考 `[武器爆炸] 原字命中「炸弹」1.00` vs Kotlin `词表[武器爆炸]「炸弹」`），**不影响拦截结果**。
+
+平台差异的替代方案（两端一致）：无 `pypinyin` → 用 `DANGER_VARIANTS` 变体/谐音等价表（26 条）顶替音节比对；无 OpenCC → 同表内含繁体写法。
+
+Java 与 Swift/Python 的语义差异（Kotlin 侧已显式补偿）：Java `\w`/`\b`/`\d` 默认 ASCII 语义，Swift(ICU)/Python 是 Unicode 语义 → 引入 `WB` 字符类常量，`\b` 改写为 `(?<!WB)` / `(?!WB)` 前后瞻；字符计数统一用 `codePointCount`；Unicode 分类用 `Character.getType()` 对应 Swift `generalCategory` / Python `unicodedata.category`。
+
 
 ## 4. 构建与验证怎么做
 
@@ -55,6 +64,8 @@
 CI 细节：`.github/workflows/ios.yml`（workflow `iOS Build`，id `358457133`）流程为 XcodeGen 生成工程 → 下载 llama.cpp XCFramework b10809 → 编译（不签名）→ 归档 → Ad-hoc 签名 → 打包 → 上传产物 `Yijing-adhoc-ipa`。`.github/workflows/android.yml`（`Android Build`，id `358478805`）跑 `assembleDebug`，产物 `Yijing-debug-apk`。两端均带 `paths` 过滤，改哪端跑哪端。
 
 工程用 XcodeGen：`ios/project.yml` 里 `sources: - path: Yijing` 是**目录级自动发现**，新增 Swift 文件不需要手工登记。
+
+本机**没有 `kotlinc`**。要单独跑一段 Kotlin 代码（如等价性回归），用 gradle 缓存里的编译器：`java -cp <jar 列表> org.jetbrains.kotlin.cli.jvm.K2JVMCompiler`。`-cp` 里除了 `kotlin-compiler-embeddable` 还要带上 `kotlin-stdlib`、`kotlin-reflect`、`kotlin-script-runtime`、`kotlin-daemon-embeddable`、`kotlinx-coroutines-core-jvm`、`annotations`（缺 coroutines 会直接 `NoClassDefFoundError`，见第 5 节）。好处是 `InputGuard.kt` 只依赖 JDK，**可以脱离 Android SDK 在 JVM 上直接跑真实源码**做验证，比"照着源文件另写一份模拟"更硬。
 
 ### 取 CI 报错的办法（踩过的坑）
 
@@ -74,7 +85,8 @@ CI 细节：`.github/workflows/ios.yml`（workflow `iOS Build`，id `358457133`�
 
 | 日期 | 现象 | 根因 | 处置 |
 | --- | --- | --- | --- |
-| 2026-09-17 | CI 编译失败：`InputGuard.swift:178:49: error: expected '{' to start the body of for-each loop` | 标点字面量里本想写全角引号 `“ ” ‘ ’`，实际落进文件的是 ASCII `"` `'`，字符串提前闭合 | 该段全部改用 `\u{201C}\u{201D}\u{2018}\u{2019}` 显式转义 + 分段拼接；此后提交前必跑闭合检查 |
+| 2026-09-17 | `NoClassDefFoundError: kotlinx/coroutines/CoroutineScope`（调 kotlin-compiler-embeddable 编译时） | `kotlin-compiler-embeddable` 是 shaded 包，但**不含 coroutines**，编译器自身启动就需要它 | `-cp` 里补 `kotlinx-coroutines-core-jvm`（+ `annotations`、`kotlin-daemon-embeddable` 等），见第 4 节 |
+| 2026-09-17 | CI 编译失败：`InputGuard.swift:178:49: error: expected '{' to start the body of for-each loop` | 标点字面量里本想写全角引号 `“ ” ‘ ’`，实际落进文件的是 ASCII `"` `'`，字符串提前闭合 | 该段全部改用 `\u{201C}\u{201D}\u{2018}\u{2019}` 显式转义 + 分段拼接；此后提交前必跑闭合检查。**Kotlin 侧同样沿用 `\uXXXX` 转义写好，已规避** |
 | 2026-09-17 | 从 Actions 取不到原始编译日志 | `actions/jobs/{id}/logs` 需 admin | 改走 check-runs 注解 + 网页日志落盘离线 grep |
 
 其他已知约束：本地小模型（约 1.2GB GGUF）不随 App 打包，装机后由用户在「设置 → 本地小模型」下载或导入；iOS 端 llama.cpp 锁定在仍含 `Package.swift` 的 revision，升级需对照新 `llama.h` 校正 `LlamaCPP.swift` 参数名。
@@ -83,7 +95,8 @@ CI 细节：`.github/workflows/ios.yml`（workflow `iOS Build`，id `358457133`�
 
 | 日期 | 提交 | 内容 | 验证 |
 | --- | --- | --- | --- |
-| 2026-09-17 | （本次提交） | 建立文档体系：新增本文件、`AGENTS.md`、`.trae/rules/progress-log.md`、`.trae/rules/git-commit-message.md`；README 订正产物名并补「文档」一节 | 纯文档改动，未触发 CI；`git status` 确认改动范围 |
+| 2026-09-17 | （本次提交） | **Android 同步 P3 输入拦截**：新增 `android/app/src/main/java/com/yijing/app/core/InputGuard.kt`（与 Swift 同源同表，另补偿 Java 正则 ASCII 语义差异）；`MainActivity.openResult()` 改三支路由（危险→结果页直出安全提示不调模型 / 非有效→等待页带软引导 / 其余照常）；`LoadingActivity` 增 `guardHint` 并在云端、本地两条 AI 路径前置系统提示词 | ① 本机 `gradlew --offline assembleDebug` **BUILD SUCCESSFUL**（1m49s）；② 编译真实 `InputGuard.kt` 在 JVM 跑 382 条语料，与参考实现**判定 0 差异** |
+| 2026-09-17 | `28ef289`、`9f7ff52` | 建立文档体系：新增本文件、`AGENTS.md`、`.trae/rules/progress-log.md`、`.trae/rules/git-commit-message.md`；README 订正产物名并补「文档」一节 | 纯文档改动，未触发 CI；`git status` 确认改动范围 |
 | 2026-09-17 | `189af24` | 修 `InputGuard.swift` 第 178 行标点字面量未转义导致的编译失败 | CI `iOS Build #26`（run `35187727041`）11 步全绿，产出 `Yijing-adhoc-ipa` 3.34MB |
 | 2026-09-17 | `3c0b980` | iOS 接入输入有效性拦截：新增 `ios/Yijing/Services/InputGuard.swift`（P3 规则闸 + 变体/谐音等价表），`ios/Yijing/Flow/CastFlow.swift` 接上路由与提示 | 静态自检 + 两端等价性 0 差异；首次 CI 因上述字面量问题失败 |
 | 2026-09-16 | `d1b59c6` | Android 修取消下载死循环、推演页动画对齐 iOS、收回调试入口 | CI |

@@ -26,6 +26,8 @@ class LoadingActivity : AppCompatActivity() {
 
     private lateinit var result: DivinationResult
     private var question = ""
+    /** 非有效提问时由首页传入的软引导，非空则前置到系统提示词（与 iOS guardHint 一致）。 */
+    private var guardHint = ""
     private var scope = ""
     private var enteredAt = 0L
 
@@ -46,6 +48,7 @@ class LoadingActivity : AppCompatActivity() {
         }
         result = r
         question = intent.getStringExtra("question") ?: ""
+        guardHint = intent.getStringExtra("guardHint") ?: ""
 
         // 复用首页「起卦」时开的会话，这样端到端计时从点起卦那一刻算起
         scope = PerfTrace.currentSession()
@@ -63,9 +66,11 @@ class LoadingActivity : AppCompatActivity() {
         val cloudOn = AiClient.cloudEnabled(this) && AiClient.hasKey(this)
         if (cloudOn) {
             val config = AiClient.loadConfig(this)
-            val (system, user) = AiClient.promptOf(
+            val (systemRaw, user) = AiClient.promptOf(
                 question, result.original, result.changed, result.movingLine, yaoYuan
             )
+            // 软引导前置到系统提示词（与 iOS CastFlow.runAiIfNeeded 一致）
+            val system = if (guardHint.isNotEmpty()) guardHint + "\n" + systemRaw else systemRaw
             PerfTrace.mark(scope, "同步准备（查表+读配置+拼提示词）",
                 SystemClock.elapsedRealtime() - tSync)
             val t0 = SystemClock.elapsedRealtime()
@@ -85,9 +90,11 @@ class LoadingActivity : AppCompatActivity() {
             } else {
                 ""
             }
-            val (system, user) = LocalAiClient.promptOf(
+            val (systemRaw, user) = LocalAiClient.promptOf(
                 question, result.original, result.changed, result.movingLine, yaoYuan
             )
+            // 软引导前置到系统提示词（与 iOS CastFlow.runAiIfNeeded 一致）
+            val system = if (guardHint.isNotEmpty()) guardHint + "\n" + systemRaw else systemRaw
             PerfTrace.mark(scope, "同步准备（查表+读配置+拼提示词）",
                 SystemClock.elapsedRealtime() - tSync,
                 "爻辞 ${yaoYuan.length} 字 · user 提示词 ${user.length} 字")
