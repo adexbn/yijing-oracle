@@ -5,7 +5,7 @@
 > 规则：只写事实，不写推测；结论必须标注「已验证」或「估计」；数字要带口径。
 
 - 最后更新：2026-09-25
-- 最近提交：`cc7f087`（分支 `main`；更准确以 `git log` 为准）
+- 最近提交：`cd849b2`（分支 `main`；更准确以 `git log` 为准）
 - 远端：https://github.com/adexbn/yijing-oracle （public）
 - 本机仓库路径：工作区下的 `yijing-ios/`（内含 `ios/` 与 `android/`）
 
@@ -16,7 +16,7 @@
 | 端 | 功能状态 | 编译验证 | 备注 |
 | --- | --- | --- | --- |
 | iOS | 输入有效性拦截（P3 规则闸）已接入 | ✅ CI 全绿（iOS Build #26）；**真机实测通过** | 产物 `Yijing-adhoc-ipa`，已装机运行正常 |
-| Android | 输入有效性拦截（P3 规则闸）已接入，与 iOS 同源同表；**本地推理已从 llama.cpp 整体换到 MNN 3.6.1（OpenCL 优先，逐级回退到 CPU）** | ✅ 本机 `gradlew assembleDebug` 通过并出 APK（24.28MB，两个 ABI 各 10 个 `.so`）；382 条语料等价性 0 差异 | 待真机实测：**OpenCL 有没有真的被启用、快多少，本机无法验证**；**思考保持开启（硬约束）** |
+| Android | 输入有效性拦截（P3 规则闸）已接入，与 iOS 同源同表；**本地推理已从 llama.cpp 整体换到 MNN 3.6.1（OpenCL 优先，逐级回退到 CPU）** | ✅ 本机 `gradlew assembleDebug` 通过并出 APK（24.28MB，两个 ABI 各 10 个 `.so`）；✅ CI `Android Build` success（run `36097827077`，含 native 编译）；382 条语料等价性 0 差异 | 待真机实测：**OpenCL 有没有真的被启用、快多少，本机无法验证**；**思考保持开启（硬约束）** |
 
 ## 2. 进行中 / 待办
 
@@ -24,7 +24,7 @@
 2. **Android 真机实测**：装机验证三条路径 —— 危险输入直达安全提示（不调模型）、非有效提问软引导、正常提问照常解读。
 3. **Python 参考实现回写**：把已验证的 P3 补丁写回本机参考实现 `input_guard_sim.py`，保证原型与两端代码同源。
 4. **（悬置）第二道闸**：App 侧本地小模型闸（Qwen3-1.7B）尚未接；只在第一道规则闸漏放时才有必要触发。
-5. **CI 能否编出 native 桥（未验证）**：Android CI 跑在 ubuntu runner 上，现在 `assembleDebug` 需要 NDK `27.2.12479018` + CMake `3.22.1`。AGP 一般会经 `sdkmanager` 自动拉取，但**本机没测过 CI**，下次 push 需盯 `Android Build` 这一步；若失败就在 workflow 里显式装 NDK。
+5. ~~**CI 能否编出 native 桥（未验证）**~~ **已解决**：Android CI 跑在 ubuntu runner 上，`assembleDebug` 需要 NDK `27.2.12479018` + CMake `3.22.1`。实测 AGP 会经 `sdkmanager` 自动拉取，无需改 workflow —— push 后 `Android Build`（run `36097827077`，sha `cd849b2`）**7 步全绿**，含「编译验证（assembleDebug）」与「上传 APK 产物」。
 
 ## 3. 输入拦截（P3）方案与验证口径
 
@@ -119,8 +119,8 @@ CI 细节：`.github/workflows/ios.yml`（workflow `iOS Build`，id `358457133`�
 
 | 日期 | 提交 | 内容 | 验证 |
 | --- | --- | --- | --- |
-| 2026-09-25 | 待提交 | **Android 本地推理从 llama.cpp 整体切到 MNN 3.6.1**（OpenCL 优先 → CPU+mmap → CPU 无 mmap 三级回退，**思考保持开启**）：新增 JNI 桥 `cpp/yijing_llm_jni.cpp` + `CMakeLists.txt`，接入 MNN 官方预编译 9 个 `.so`（两个 ABI），重写 `core/LocalAiClient.kt`（对外接口不变），`ModelManager.kt` 换成 MNN 5 文件清单（合计 1 235 520 567 B）双源下载，清掉 `SettingsActivity.kt` / `PerfTrace.kt` 的 llama 依赖，修 `AndroidManifest.xml` 的 OpenCL 声明位置 | ① 本机 `gradlew assembleDebug` **BUILD SUCCESSFUL in 27s**，NDK 27.2.12479018 + CMake 3.22.1 实跑通（两个 ABI 均编出）；② 产物 `app-debug.apk` **24.28 MB**，解包核对每 ABI 10 个 `.so`（9 MNN + `libyijingllm.so`）共 20 个；③ 打包后清单里 `<uses-native-library>` 落在 `<application>` 内。**OpenCL 是否真的启用、提速多少，Windows 上测不出来，待真机（高通 Adreno + 华为 Kirin/Mali）** |
-| 2026-09-25 | 待提交 | **Android 推理加速调研**：新增 `docs/ANDROID_PERF_OPTIONS.md`，记录「现状是纯 CPU 包」的根因、MNN / 自编 llama.cpp OpenCL / LiteRT-LM 等三条路线的可核实事实与链接、本机缺 NDK+CMake 的事实、以及 5 项待实测项。**未改任何代码** | 事实来源为 Maven POM/README、MNN 官方文档与 Releases、ModelScope 模型页；本机 SDK 目录实查 |
+| 2026-09-25 | `cd849b2` | **Android 本地推理从 llama.cpp 整体切到 MNN 3.6.1**（OpenCL 优先 → CPU+mmap → CPU 无 mmap 三级回退，**思考保持开启**）：新增 JNI 桥 `cpp/yijing_llm_jni.cpp` + `CMakeLists.txt`，接入 MNN 官方预编译 9 个 `.so`（两个 ABI），重写 `core/LocalAiClient.kt`（对外接口不变），`ModelManager.kt` 换成 MNN 5 文件清单（合计 1 235 520 567 B）双源下载，清掉 `SettingsActivity.kt` / `PerfTrace.kt` 的 llama 依赖，修 `AndroidManifest.xml` 的 OpenCL 声明位置 | ① 本机 `gradlew assembleDebug` **BUILD SUCCESSFUL in 27s**，NDK 27.2.12479018 + CMake 3.22.1 实跑通（两个 ABI 均编出）；② 产物 `app-debug.apk` **24.28 MB**，解包核对每 ABI 10 个 `.so`（9 MNN + `libyijingllm.so`）共 20 个；③ 打包后清单里 `<uses-native-library>` 落在 `<application>` 内；④ CI `Android Build`（run `36097827077`）**success**，7 步全绿。**OpenCL 是否真的启用、提速多少，Windows 上测不出来，待真机（高通 Adreno + 华为 Kirin/Mali）** |
+| 2026-09-25 | `65181f8` | **Android 推理加速调研**：新增 `docs/ANDROID_PERF_OPTIONS.md`，记录「现状是纯 CPU 包」的根因、MNN / 自编 llama.cpp OpenCL / LiteRT-LM 等三条路线的可核实事实与链接、本机缺 NDK+CMake 的事实、以及 5 项待实测项。**未改任何代码** | 事实来源为 Maven POM/README、MNN 官方文档与 Releases、ModelScope 模型页；本机 SDK 目录实查。文末已补后记，标注其中被后续实测推翻的 4 条（预编译包含 LLM 模块、模型文件数、本机工具链、`required` 取值） |
 | 2026-09-17 | `050032f` | **Android 同步 P3 输入拦截**：新增 `android/app/src/main/java/com/yijing/app/core/InputGuard.kt`（与 Swift 同源同表，另补偿 Java 正则 ASCII 语义差异）；`MainActivity.openResult()` 改三支路由（危险→结果页直出安全提示不调模型 / 非有效→等待页带软引导 / 其余照常）；`LoadingActivity` 增 `guardHint` 并在云端、本地两条 AI 路径前置系统提示词 | ① 本机 `gradlew --offline assembleDebug` **BUILD SUCCESSFUL**（1m49s）；② 编译真实 `InputGuard.kt` 在 JVM 跑 382 条语料，与参考实现**判定 0 差异**；③ CI `Android Build` **success**（1m17s） |
 | 2026-09-17 | `28ef289`、`9f7ff52` | 建立文档体系：新增本文件、`AGENTS.md`、`.trae/rules/progress-log.md`、`.trae/rules/git-commit-message.md`；README 订正产物名并补「文档」一节 | 纯文档改动，未触发 CI；`git status` 确认改动范围 |
 | 2026-09-17 | `189af24` | 修 `InputGuard.swift` 第 178 行标点字面量未转义导致的编译失败 | CI `iOS Build #26`（run `35187727041`）11 步全绿，产出 `Yijing-adhoc-ipa` 3.34MB |
