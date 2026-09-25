@@ -5,7 +5,7 @@
 > 规则：只写事实，不写推测；结论必须标注「已验证」或「估计」；数字要带口径。
 
 - 最后更新：2026-09-25
-- 最近提交：`cd849b2`（分支 `main`；更准确以 `git log` 为准）
+- 最近提交：`0f97219`（分支 `main`；更准确以 `git log` 为准）
 - 远端：https://github.com/adexbn/yijing-oracle （public）
 - 本机仓库路径：工作区下的 `yijing-ios/`（内含 `ios/` 与 `android/`）
 
@@ -15,16 +15,20 @@
 
 | 端 | 功能状态 | 编译验证 | 备注 |
 | --- | --- | --- | --- |
-| iOS | 输入有效性拦截（P3 规则闸）已接入 | ✅ CI 全绿（iOS Build #26）；**真机实测通过** | 产物 `Yijing-adhoc-ipa`，已装机运行正常 |
-| Android | 输入有效性拦截（P3 规则闸）已接入，与 iOS 同源同表；**本地推理已从 llama.cpp 整体换到 MNN 3.6.1（OpenCL 优先，逐级回退到 CPU）** | ✅ 本机 `gradlew assembleDebug` 通过并出 APK（24.28MB，两个 ABI 各 10 个 `.so`）；✅ CI `Android Build` success（run `36097827077`，含 native 编译）；382 条语料等价性 0 差异 | 待真机实测：**OpenCL 有没有真的被启用、快多少，本机无法验证**；**思考保持开启（硬约束）** |
+| iOS | 输入有效性拦截（P3 规则闸）已接入 | ⚠️ 本轮改了 `InputGuard.swift` / `LocalAiClient.swift`（词表收紧 + SYSTEM 重写 + 回显剥离），**待 CI `iOS Build` 验证**；上一版为 CI 全绿（iOS Build #26） | 产物 `Yijing-adhoc-ipa`，已装机运行正常；本机是 Windows 无 Xcode，Swift 改动只能靠 CI |
+| Android | 输入有效性拦截（P3 规则闸）已接入，与 iOS 同源同表；**本地推理已从 llama.cpp 整体换到 MNN 3.6.1（OpenCL 优先，逐级回退到 CPU）** | ✅ 本机 `gradlew assembleDebug` 通过并出 APK（**25 576 721 B ≈ 24.39 MB**，产物时间 2026-09-25 14:37，两个 ABI 各 10 个 `.so`）；✅ 解包 APK 的 `classes*.dex` 直接核实新词表已入包；✅ 382 条语料等价性 0 差异（本轮复跑） | ⚠️ **真机反馈「旗舰机反而更慢（25s）」尚未定位，等真机 `PerfTrace`/`PerfPanel` 数据**；**OpenCL 有没有真的被启用、快多少，本机无法验证**；**思考保持开启（硬约束）** |
+
+> 2026-09-25 真机反馈（小米18 Pro Max / 高通 2nm）四个问题：阴阳图错、合法提问被判无效、思考过程泄漏、旗舰机更慢。
+> 前三个已在 `0f97219` 修掉（详见第 6 节），**第四个未动** —— 本机 Windows 测不出推理性能，必须拿真机埋点数据。
 
 ## 2. 进行中 / 待办
 
-1. **Android 推理加速（代码改造已完成，待上机验证）**：用户拍定走 **MNN 3.6.1 + OpenCL**。llama.cpp 已从 Android 侧整体移除（AAR 依赖、`dev.ffmpegkit.llama.*` 调用、旧 `LocalAiClient` 实现），换成 MNN 官方 Android 预编译包 + 自编 JNI 桥。**本机 `gradlew assembleDebug` 通过并出 APK，但 OpenCL / CPU 究竟谁生效、提速多少，Windows 上测不出来**，必须上真机（高通 Adreno 一台 + 华为 Kirin/Mali 一台）。改造要点见第 4 节「MNN 3.6.1 迁移要点」。
-2. **Android 真机实测**：装机验证三条路径 —— 危险输入直达安全提示（不调模型）、非有效提问软引导、正常提问照常解读。
-3. **Python 参考实现回写**：把已验证的 P3 补丁写回本机参考实现 `input_guard_sim.py`，保证原型与两端代码同源。
-4. **（悬置）第二道闸**：App 侧本地小模型闸（Qwen3-1.7B）尚未接；只在第一道规则闸漏放时才有必要触发。
-5. ~~**CI 能否编出 native 桥（未验证）**~~ **已解决**：Android CI 跑在 ubuntu runner 上，`assembleDebug` 需要 NDK `27.2.12479018` + CMake `3.22.1`。实测 AGP 会经 `sdkmanager` 自动拉取，无需改 workflow —— push 后 `Android Build`（run `36097827077`，sha `cd849b2`）**7 步全绿**，含「编译验证（assembleDebug）」与「上传 APK 产物」。
+1. **（最高优先，等数据）旗舰机反而更慢：用户反馈小米18 Pro Max（高通 2nm）出结果要 25s，比小手机还慢**。本机 Windows **无法复现推理性能**，必须先拿到真机埋点：`PerfTrace` / `PerfPanel`（入口 `SettingsActivity`）里的 `backend=` 实际值、三级回退（`opencl+mmap` → `cpu+mmap` → `cpu` 无 mmap）是否被打到 CPU、OpenCL kernel 是否首跑冷编译、25s 里有多少是**模型冷加载**而非推理。**拿到实测前不动任何性能参数**（用户已明确「CPU 调优你已经调试过了」）。
+2. **Android 真机实测**：装机验证三条路径 —— 危险输入直达安全提示（不调模型）、非有效提问软引导、正常提问照常解读；并顺带验证本轮三个修复（阴阳图、节日词表、思考回显）。
+3. ~~**Python 参考实现回写**~~ **已完成（2026-09-25）**：`ANCHOR` / `THING` / `INTENT` 三份已逐词对齐 —— 参考实现的 `INTENT` 补上 `怎样` / `咋办` / `怎么办` / `如何是好` / `能行不` / `行吗` 6 个词（此前只有 Kotlin/Swift 有，逐词比对确认差异仅此一处）。补齐后复跑三端：382 条（**编译真实 `InputGuard.kt`**）判定**不一致 0 条**、各批准确率仍为 A 100/100、B 40/40、C 20/20、D 120/122、E 86/100、E 批名单外多放行 0 条；iOS 侧自动抽取复刻**不一致 0 条**；V 批 12 条三端**互不一致 0 条**。
+4. **（待用户确认）`verify_cases.tsv` #12 `中秋出去玩` 的 gold 标注**：gold=invalid，但 Kotlin / Swift / Python 参考**三方一致判 valid**。经核查它走的是 `THING` 弱证据分支（`出去玩` 命中 + 文案 ≥5 个码点），属设计内的「省略主语问自己」场景，逻辑自洽；倾向认为 gold 标注过严（该句本身是可占问的处境）。**未强改代码迁就 gold**，等用户拍定是改 gold 还是收紧判据。
+5. **（悬置）第二道闸**：App 侧本地小模型闸（Qwen3-1.7B）尚未接；只在第一道规则闸漏放时才有必要触发。
+6. ~~**CI 能否编出 native 桥（未验证）**~~ **已解决**：Android CI 跑在 ubuntu runner 上，`assembleDebug` 需要 NDK `27.2.12479018` + CMake `3.22.1`。实测 AGP 会经 `sdkmanager` 自动拉取，无需改 workflow —— push 后 `Android Build`（run `36097827077`，sha `cd849b2`）**7 步全绿**，含「编译验证（assembleDebug）」与「上传 APK 产物」。
 
 ## 3. 输入拦截（P3）方案与验证口径
 
@@ -50,6 +54,10 @@
 | Android | **直接编译真实 `InputGuard.kt`**（gradle 缓存里的 kotlin-compiler-embeddable，本机无 kotlinc）在 JVM 上跑同一批 382 条 | 判定不一致 **0** 条；各批准确率与参考完全相同（A 100/100、B 40/40、C 20/20、D 120/122、E 86/100） |
 
 > Android 侧另有 30 条「判定一致、但原因文案不同」，差异仅在参考实现多打了相似度数值（如参考 `[武器爆炸] 原字命中「炸弹」1.00` vs Kotlin `词表[武器爆炸]「炸弹」`），**不影响拦截结果**。
+
+**真机级 V 批（12 条，2026-09-25 新增）**：真机反馈暴露了词表缺口，因此补了一批「真机会输入」的用例（`verify_cases.tsv`，12 条，8 条 gold=valid / 4 条 gold=invalid，含 `中秋该出去玩吗`、`假期怎么安排`、`周末有什么电影` 等）。核对面扩到三端：**Kotlin 真源编译 / Swift 源自动抽取 / Python 参考，三方判定互不一致 0 条**。本轮词表调整后，`周末有什么电影` 由误放行改为 `invalid`（与 gold 一致）；剩 1 条 `中秋出去玩` 与 gold 不一致，见第 2 节待办第 4 条。**2026-09-25 又补齐了参考实现的 `INTENT` 6 个词，三份表已逐词一致，复跑仍为 0 不一致。**
+
+> **覆盖度警告**：382 条主回归语料对本轮增删的词（`周末` `中秋` `端午` `清明` `七夕` `元宵` `重阳` `假期` `节日` `出去玩` 等）**零覆盖**（全库 grep 无命中）。所以 382 条的「0 差异」**不能**当作新词表的证据，新词只能靠这 12 条 V 批 + 真机验证。补语料时应优先往这些空格上填。
 
 平台差异的替代方案（两端一致）：无 `pypinyin` → 用 `DANGER_VARIANTS` 变体/谐音等价表（26 条）顶替音节比对；无 OpenCC → 同表内含繁体写法。
 
@@ -112,6 +120,10 @@ CI 细节：`.github/workflows/ios.yml`（workflow `iOS Build`，id `358457133`�
 | 2026-09-17 | CI 编译失败：`InputGuard.swift:178:49: error: expected '{' to start the body of for-each loop` | 标点字面量里本想写全角引号 `“ ” ‘ ’`，实际落进文件的是 ASCII `"` `'`，字符串提前闭合 | 该段全部改用 `\u{201C}\u{201D}\u{2018}\u{2019}` 显式转义 + 分段拼接；此后提交前必跑闭合检查。**Kotlin 侧同样沿用 `\uXXXX` 转义写好，已规避** |
 | 2026-09-25 | `:app:processDebugResources FAILED`，`AAPT: error: unexpected element <uses-native-library> found in <manifest>.`（AndroidManifest.xml:16） | `<uses-native-library>` 被写在了 `<manifest>` 下。**实测 aapt2 只接受它挂在 `<application>` 下**（与 `<uses-library>` 同级），与 AGP 版本无关（本项目 AGP 9.4.0，网上「AGP 4.1 太老」的说法不适用） | 移到 `<application>` 内；用本机 build-tools 的 aapt2 单独跑过两种最小清单做对照（放 `<manifest>` 下 exit=1 报同一句错，放 `<application>` 下 exit=0），与 MNN 官方 `MnnLlmChat` 清单写法一致。随后 `assembleDebug` 通过 |
 | 2026-09-17 | 从 Actions 取不到原始编译日志 | `actions/jobs/{id}/logs` 需 admin | 改走 check-runs 注解 + 网页日志落盘离线 grep |
+| 2026-09-25 | 加载页阴阳图在真机上画错（退化成「墨球 + 白点 + 小墨点」，看不出 S 形） | `TaijiProgressView.drawTaiji()` 在 `drawPath(halfPath, paint)` 前**漏了一句 `fill(inkColor, alpha)`**，画笔还停在上面「纸色底盘」的状态，右半边被填成纸色 | 在 `drawPath` 前补 `fill(inkColor, alpha)`，并加注释写明失效形态；随 `0f97219` 提交 |
+| 2026-09-25 | Kotlin 侧想「剥掉思考过程」时发现引擎帮不上忙 | MNN 的 `stripThinkBlocks` **只清洗提示词缓存**（`prompt_cache_utils.hpp:13`，仅被 `llm.cpp:1235` / `llm.cpp:1418` 调用），**完全不处理 `response()` 的生成文本** | 生成侧必须自己兜底：`LocalAiClient.stripThinking()` 做 5 步清洗 + 指令回显剥离（`INSTRUCTION_ECHO_SEEDS` / `dropInstructionEcho`，阈值 60 字）；随 `0f97219` 提交 |
+| 2026-09-25 | 在会话里 `import input_guard_sim` 会**顺手往工作区根目录写 6 个 `输入拦截模拟结果_*.tsv`** | 该脚本把「跑全部批次并落盘」写在了模块顶层，导入即执行（没有 `if __name__ == "__main__"` 保护） | 本次只是核对三端一致性时误触发（文件被按新词表重写，内容实质不变，无损坏）。**已修**：`v_tri_check.py` 改为只 `exec` 规则部分（截到 `DIR = OUT.rsplit` 之前），复跑后那 6 个文件 mtime 仍停在 `2026/9/25 14:36:05`，确认不再落盘。**该脚本顶层缺 `if __name__ == "__main__"` 保护这一点仍在，其余脚本勿退化成整模块 import** |
+| 2026-09-25 | Kotlin 等价性回归里「本轮词表改动是否进了 APK」无法只看时间戳判断（gradle 报了 `packageDebug UP-TO-DATE`） | 时间戳/构建日志都不足以证明产物内容 | 写 `apk_dex_probe.py`：解包 APK 的 `classes*.dex` 直接搜特征字符串 —— 新增词（端午/清明/七夕/元宵/重阳）命中、已删词（周末/机票/民宿）不命中，才算证据 |
 
 其他已知约束：本地小模型不随 App 打包，装机后由用户在「设置 → 本地小模型」下载或导入。**两端用的不再是同一套模型格式**：iOS 仍走 llama.cpp + GGUF（约 1.2GB，锁定在仍含 `Package.swift` 的 revision，升级需对照新 `llama.h` 校正 `LlamaCPP.swift` 参数名）；Android 已换 MNN 3.6.1，模型是该框架自己的 5 文件组合（`config.json` / `llm_config.json` / `llm.mnn` / `tokenizer.txt` / `llm.mnn.weight`，合计 1 235 520 567 B），由 `ModelManager` 双源下载（hf-mirror 优先，ModelScope 兜底）。
 
@@ -119,6 +131,7 @@ CI 细节：`.github/workflows/ios.yml`（workflow `iOS Build`，id `358457133`�
 
 | 日期 | 提交 | 内容 | 验证 |
 | --- | --- | --- | --- |
+| 2026-09-25 | `0f97219` | **修真机反馈的三个问题（小米18 Pro Max）**：① 加载页阴阳图错 —— `TaijiProgressView.drawTaiji()` 补 `fill(inkColor, alpha)`；② 合法提问被判「非有效提问」—— `InputGuard` 的 ANCHOR 补「节日/假期/中秋/端午/清明/七夕/元宵/重阳」等有具体事由的处境词、剔除纯循环时间词「周末」，THING 剔除可订物品「机票/车票/酒店/民宿」，**Kotlin / Swift / Python 参考三端同源同表同步**；③ 思考过程连系统提示词一起泄漏进答案 —— `LocalAiClient` 的 SYSTEM 重写为 255 字自然叙述版并显式要求「只输出解读本身」，`stripThinking` 增加指令回显剥离（`INSTRUCTION_ECHO_SEEDS` 11 个种子 + `dropInstructionEcho`，阈值 60 字），兜住 MNN 只清提示词缓存的缺口。**性能项（旗舰机 25s）刻意未动，等真机埋点** | ① 编译**真实 `InputGuard.kt`** 在 JVM 跑 382 条：判定不一致 **0** 条，各批准确率 A 100/100、B 40/40、C 20/20、D 120/122、E 86/100 与参考完全一致，E 批名单外多放行 0 条；② 12 条 V 批**三端互不一致 0 条**，`周末有什么电影` 改为 invalid；③ `strip_check` 13/13 OK，两端 SYSTEM 各 255 字逐字一致；④ `cd android; ./gradlew.bat --offline assembleDebug` **BUILD SUCCESSFUL**，产物 APK 25 576 721 B，解包 dex 核实新词入包、旧词已删；⑤ iOS 待 CI `iOS Build` |
 | 2026-09-25 | `cd849b2` | **Android 本地推理从 llama.cpp 整体切到 MNN 3.6.1**（OpenCL 优先 → CPU+mmap → CPU 无 mmap 三级回退，**思考保持开启**）：新增 JNI 桥 `cpp/yijing_llm_jni.cpp` + `CMakeLists.txt`，接入 MNN 官方预编译 9 个 `.so`（两个 ABI），重写 `core/LocalAiClient.kt`（对外接口不变），`ModelManager.kt` 换成 MNN 5 文件清单（合计 1 235 520 567 B）双源下载，清掉 `SettingsActivity.kt` / `PerfTrace.kt` 的 llama 依赖，修 `AndroidManifest.xml` 的 OpenCL 声明位置 | ① 本机 `gradlew assembleDebug` **BUILD SUCCESSFUL in 27s**，NDK 27.2.12479018 + CMake 3.22.1 实跑通（两个 ABI 均编出）；② 产物 `app-debug.apk` **24.28 MB**，解包核对每 ABI 10 个 `.so`（9 MNN + `libyijingllm.so`）共 20 个；③ 打包后清单里 `<uses-native-library>` 落在 `<application>` 内；④ CI `Android Build`（run `36097827077`）**success**，7 步全绿。**OpenCL 是否真的启用、提速多少，Windows 上测不出来，待真机（高通 Adreno + 华为 Kirin/Mali）** |
 | 2026-09-25 | `65181f8` | **Android 推理加速调研**：新增 `docs/ANDROID_PERF_OPTIONS.md`，记录「现状是纯 CPU 包」的根因、MNN / 自编 llama.cpp OpenCL / LiteRT-LM 等三条路线的可核实事实与链接、本机缺 NDK+CMake 的事实、以及 5 项待实测项。**未改任何代码** | 事实来源为 Maven POM/README、MNN 官方文档与 Releases、ModelScope 模型页；本机 SDK 目录实查。文末已补后记，标注其中被后续实测推翻的 4 条（预编译包含 LLM 模块、模型文件数、本机工具链、`required` 取值） |
 | 2026-09-17 | `050032f` | **Android 同步 P3 输入拦截**：新增 `android/app/src/main/java/com/yijing/app/core/InputGuard.kt`（与 Swift 同源同表，另补偿 Java 正则 ASCII 语义差异）；`MainActivity.openResult()` 改三支路由（危险→结果页直出安全提示不调模型 / 非有效→等待页带软引导 / 其余照常）；`LoadingActivity` 增 `guardHint` 并在云端、本地两条 AI 路径前置系统提示词 | ① 本机 `gradlew --offline assembleDebug` **BUILD SUCCESSFUL**（1m49s）；② 编译真实 `InputGuard.kt` 在 JVM 跑 382 条语料，与参考实现**判定 0 差异**；③ CI `Android Build` **success**（1m17s） |
