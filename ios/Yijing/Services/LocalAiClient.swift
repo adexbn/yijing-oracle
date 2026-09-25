@@ -1,25 +1,17 @@
 import Foundation
 
-/// 本地小模型解读：调用 llama.cpp 跑 Qwen3-1.7B GGUF，全程离线。
+/// 本地小模型解读：调用 llama.cpp 跑 Qwen3.5-2B GGUF，全程离线。
 enum LocalAiClient {
 
-    /// 定稿系统提示词：直白、有对象感、建议具体。
+    /// 定稿系统提示词：E 方案（精简 + few-shot 短样例）。
     ///
-    /// 2026-09-25 改过一轮：原来写的是「按这个顺序用大白话讲：1. … 2. … 3. … 4. ……，
-    /// 控制在150字以内，像聊天一样自然」，真机上模型会把这些**要求本身**当正文吐出来 ——
-    /// 答案照抄了 1./2./3./4. 的编号，末尾还逐字贴上「（字数控制在150字以内，像聊天一样自然）」
-    /// （见 `stripThinking` 第 5 步）。所以这里把可被照抄的「编号清单 + 括号里的硬指标」
-    /// 改成没有编号的自然叙述，并在最后一句显式禁止复述要求。
-    ///
-    /// Android 端 `LocalAiClient.kt` 的 `SYSTEM` 必须与本串**逐字相同**，改这里就同步改那边。
-    static let SYSTEM = "你是一个会解卦的朋友，说话直白、接地气，像跟人当面聊天，不要文绉绉、不要用文言字眼。" +
-        "顺着讲三件事：先说他抽到的卦本身是什么状态、什么性子，用生活里的话讲；" +
-        "再说动的那一爻在提醒什么，把爻辞翻成大白话，讲对他实际意味着什么；" +
-        "最后说变成的卦，点明事情会往哪个方向走。" +
-        "结尾紧扣他问的那件事给几句实在建议，包括该怎么做、要注意和避免什么，" +
-        "要具体到眼下能做的事，别给「积累经验」这类泛泛的话，方向也别和前面的结论打架。" +
-        "全程用「你」称呼他，长度控制在百来字，像聊天一样自然。" +
-        "只输出解读本身，不要复述、解释或提到上面这些要求。"
+    /// 与 Android 端 `LocalAiClient.kt` 的 `SYSTEM` 逐字同步，改这里就同步改那边。
+    static let SYSTEM =
+        "你是解卦的朋友，说话直白、接地气，简短有力，控制在 100 字内。" +
+        "先讲卦的性子，再讲动爻提醒什么，最后说变卦和建议。" +
+        "只输出解读，别废话。\n\n" +
+        "例：问「今年换工作好不好」，抽到乾卦 2 爻动→同人。\n" +
+        "答：你现在势头挺足，但别急着跳，第二爻提醒你先稳住本事、把东西学扎实再动。变卦同人，说明真跳了能找到志同道合的团队，但得是你先有料才行。建议再熬俩月，把手头项目做漂亮了再投。"
 
     static func promptOf(
         question: String,
@@ -35,15 +27,13 @@ enum LocalAiClient {
         return (SYSTEM, user)
     }
 
-    /// 单次生成上限。思考段和正式回答**共用**同一份 token 预算，所以按「最坏情况」给：
-    /// 真机基准里预算太小的时候，思考段就把钱花光了、去标签后一个字不剩。
-    /// 与 Android 端 `MAX_TOKENS_THINKING` 取齐；仍受 `n_ctx=2048` 约束（提示词约 333 token）。
-    private static let maxTokensThinking: Int32 = 768
+    /// 单次生成上限。non-thinking 模式不需要思考段预算，给 200 足够（答案约 100 字）。
+    /// 与 Android 端 `MAX_TOKENS_THINKING` 取齐。
+    private static let maxTokensThinking: Int32 = 200
 
-    /// 兜底重跑时的上限。真出现上面那种情况时，模型其实还没开始写答案就被截断了 ——
-    /// 与其给用户一张空白解读，不如把预算加大再跑一轮，宁可多等一轮。
-    /// 333（提示词）+ 1536 = 1869 < 2048，仍在上下文窗口内。
-    private static let maxTokensRetry: Int32 = 1536
+    /// 兜底重跑时的上限。non-thinking 模式下思考段不会吃预算，
+    /// 兜底主要防极端长输出，给 400 够了。
+    private static let maxTokensRetry: Int32 = 400
 
     /// 使用本地模型生成解读。模型未下载或不完整时抛出带提示的异常。
     static func generate(system: String, user: String) async throws -> String {
@@ -70,10 +60,10 @@ enum LocalAiClient {
                     var text = stripThinking(first)
                     YjLog.log("后处理：原始 \(first.utf8.count) 字节 → 去思考标签后 \(text.utf8.count) 字节")
 
-                    // 兜底：思考段把预算吃光时，答案一个字都没来得及写，去标签后就是空白。
-                    // 不能靠「关思考」绕（关思考是硬约束禁止的），改成加大预算重跑。
+                    // 兜底：non-thinking 模式下若输出为空，可能是采样退化或模板问题，
+                    // 加大预算重跑一次，宁可多等一轮也不给空白。
                     if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        YjLog.log("空结果兜底：思考段吃光 \(maxTokensThinking) token、答案被截断，预算提到 \(maxTokensRetry) 重跑一次")
+                        YjLog.log("空结果兜底：首次输出为空，预算提到 \(maxTokensRetry) 重跑一次")
                         let second = try LlamaCPP.complete(
                             modelPath: path, system: system, user: user, maxTokens: maxTokensRetry
                         )

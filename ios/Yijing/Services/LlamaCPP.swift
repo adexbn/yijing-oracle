@@ -208,20 +208,18 @@ private enum LlamaRuntime {
 
 enum LlamaCPP {
 
-    /// 是否保留 Qwen3 的思考段。**恒为 true —— 这是项目硬约束**（原因见 `applyChatTemplate`）。
+    /// 是否保留 Qwen3 的思考段。本版本为 false（non-thinking 模式）：
+    /// 模板补空思考块，模型直接作答，速度更快且不会出现思考段跑飞的问题。
     ///
-    /// 2026-09-25 修正：以前这个开关并不存在 —— `applyChatTemplate` 末尾无条件拼了空思考块，
-    /// 真机日志里 `STEP 8: 输出预览` 两次都是纯答案、全文搜不到 `think`，
-    /// 等于 iOS 一直在跑**非思考模式**，和硬约束正好相反。
-    /// 现在由本开关单点控制，采样参数也跟着这套推荐值成套切换。
-    static let enableThinking = true
+    /// 与 Android 端 `LocalAiClient.ENABLE_THINKING` 同步。
+    static let enableThinking = false
 
     /// 生成一次回复。并发调用会被串行化（同一时刻只跑一次推理）。
     ///
-    /// maxTokens 默认 768：思考段与正式答案**共用**同一份 token 预算，必须按最坏情况给。
-    /// 真机基准里预算给 320 左右时思考段就把钱花光了、去标签后一个字不剩。
+    /// maxTokens 默认 200：non-thinking 模式下不需要给思考段留预算，
+    /// 正常答案约 100 字 / ~130 token，200 足够。
     /// 与 Android 端 `LocalAiClient.MAX_TOKENS_THINKING` 取齐。
-    static func complete(modelPath: String, system: String, user: String, maxTokens: Int32 = 768) throws -> String {
+    static func complete(modelPath: String, system: String, user: String, maxTokens: Int32 = 200) throws -> String {
         // 先把 llama.cpp 的日志接到文件日志，加载失败时能拿到底层原因。
         llama_log_set(llamaLogCallback, nil)
         // GGML_ASSERT 断言失败时走 ggml_abort，默认只 fprintf(stderr) 不进 llama 日志回调；
@@ -433,7 +431,9 @@ enum LlamaCPP {
     /// 补上（等价 enable_thinking=false）：开头已经是「结束了的空思考块」，模型直接作答。
     /// 不补（等价 enable_thinking=true）：模型自己开 <think> 段，权衡完再答。
     ///
-    /// 本项目按硬约束走**开启思考**（`enableThinking = true`）。
+    /// 本项目当前走**关闭思考**（`enableThinking = false`）：
+    /// Qwen3.5-2B 尺寸下思考模式不稳定，容易跑飞进英文 Thinking Process 不出结束符，
+    /// non-thinking 模式速度更快、输出更可控。
     /// 注意「只写 `<think>` 不写 `</think>`」是错的：那会把模型关在思考块里无尽写内心戏，
     /// 永远等不到正文。要开就整个不补，要关就整块补全。
     private static func applyChatTemplate(system: String, user: String) -> String {

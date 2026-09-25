@@ -3,14 +3,14 @@ import Foundation
 /// 本地小模型（GGUF）的下载与文件管理。模型不随 App 打包，安装后按需下载或本地导入。
 enum ModelManager {
 
-    static let modelFile = "qwen3-1.7b-q4_k_m.gguf"
-    static let modelURL = "https://huggingface.co/lmstudio-community/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf"
-    static let modelURLMirror = "https://hf-mirror.com/lmstudio-community/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf"
+    static let modelFile = "qwen3.5-2b-q4_k_m.gguf"
+    static let modelURL = "https://huggingface.co/lmstudio-community/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf"
+    static let modelURLMirror = "https://hf-mirror.com/lmstudio-community/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf"
 
-    /// 模型文件完整的最小字节数。Qwen3-1.7B Q4_K_M 约 1223MB。
+    /// 模型文件完整的最小字节数。Qwen3.5-2B Q4_K_M 约 1.4GB。
     /// 下载/导入中断会留下不完整文件，若不校验大小，llama.cpp 用 mmap 加载时
     /// 访问越界会触发 SIGBUS 直接崩溃（而非可捕获的加载失败）。
-    static let minModelBytes: Int64 = 1100 * 1024 * 1024
+    static let minModelBytes: Int64 = 1300 * 1024 * 1024
 
     /// 下载源顺序：备用源优先，原站兜底。
     static let sources = [modelURLMirror, modelURL]
