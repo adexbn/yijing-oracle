@@ -1,10 +1,12 @@
 package com.yijing.app.core
 
 import android.content.Context
+import java.io.BufferedInputStream
 import java.io.File
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.zip.ZipInputStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -13,19 +15,68 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 /**
- * 本地小模型（GGUF）的下载与文件管理。
- * 模型不随 APK 打包，首次使用时按需下载到应用专属外部目录，或由用户从本地导入。
+ * 本地小模型的下载与文件管理。
+ *
+ * 引擎已从 llama.cpp（单文件 GGUF）换成 MNN（多文件模型目录），所以这里跟着改成
+ * 「一个目录 + 5 个文件」的管理方式：
+ *
+ * | 文件 | 字节数 | 作用 |
+ * | --- | --- | --- |
+ * | `config.json` | 403 | 模型元信息；引擎用它所在目录推断 `base_dir` |
+ * | `llm_config.json` | 4881 | MNN 自有配置（隐藏层、层数、jinja 聊天模板、eos） |
+ * | `llm.mnn` | 461520 | 计算图结构 |
+ * | `tokenizer.txt` | 3193569 | 分词器词表 |
+ * | `llm.mnn.weight` | 1231860194 | 权重（占 99.96%） |
+ *
+ * 字节数取自官方仓库的 LFS 元数据（HuggingFace `taobao-mnn/Qwen3-1.7B-MNN` 与
+ * ModelScope `MNN/Qwen3-1.7B-MNN` 两边一致），下载后按**精确长度**逐个核对：
+ * 少了会崩、多了说明拿到的不是同一份文件，两种都不该放行。
+ *
+ * 模型不随 APK 打包，首次使用时按需下载到应用专属外部目录，或由用户导入 zip。
  */
 object ModelManager {
 
-    const val MODEL_FILE = "qwen3-1.7b-q4_k_m.gguf"
-    const val MODEL_URL =
-        "https://huggingface.co/lmstudio-community/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf"
-    const val MODEL_URL_MIRROR =
-        "https://hf-mirror.com/lmstudio-community/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf"
+    /** 模型目录名，放在 `getExternalFilesDir("models")` 下面。 */
+    const val MODEL_DIR_NAME = "qwen3-1.7b-mnn"
 
-    /** 下载源顺序：备用源优先，原站兜底。 */
-    val SOURCES = listOf(MODEL_URL_MIRROR, MODEL_URL)
+    /** 模型清单里的一个文件。 */
+    data class ModelFile(val name: String, val bytes: Long) {
+        /** 人类可读体积，用于提示文案。 */
+        val sizeText: String get() = formatSize(bytes)
+    }
+
+    /**
+     * 必需文件清单。顺序刻意「小的在前、大的在后」：
+     * 前 4 个加起来才 3.6MB，先跑完能立刻暴露网络/证书问题，
+     * 不至于让用户等完 1.2GB 才发现根本连不上。
+     */
+    val FILES: List<ModelFile> = listOf(
+        ModelFile("config.json", 403L),
+        ModelFile("llm_config.json", 4881L),
+        ModelFile("llm.mnn", 461_520L),
+        ModelFile("tokenizer.txt", 3_193_569L),
+        ModelFile("llm.mnn.weight", 1_231_860_194L)
+    )
+
+    /** 全套文件的字节数合计（1,235,520,567 B ≈ 1.15 GiB），下载进度按它归一化。 */
+    val TOTAL_BYTES: Long = FILES.sumOf { it.bytes }
+
+    /**
+     * 模型仓库页面（供用户用电脑手动下载）。
+     * 链接给的是**仓库页**而不是某个文件：MNN 模型是 5 个文件成套使用的，
+     * 只下单个文件装不起来。
+     */
+    const val MODEL_URL = "https://huggingface.co/taobao-mnn/Qwen3-1.7B-MNN/tree/main"
+    const val MODEL_URL_MIRROR = "https://modelscope.cn/models/MNN/Qwen3-1.7B-MNN/files"
+
+    /** 两个直连下载源的 URL 前缀，文件名直接拼在后面。 */
+    private const val BASE_HF_MIRROR =
+        "https://hf-mirror.com/taobao-mnn/Qwen3-1.7B-MNN/resolve/main/"
+    private const val BASE_MODELSCOPE =
+        "https://modelscope.cn/models/MNN/Qwen3-1.7B-MNN/resolve/master/"
+
+    /** 下载源顺序：镜像优先，ModelScope 兜底。两个源都已逐文件验证可直连。 */
+    val SOURCES = listOf(BASE_HF_MIRROR, BASE_MODELSCOPE)
 
     /** 连接超时：TCP/TLS 握手阶段的等待上限。 */
     private const val CONNECT_TIMEOUT_MS = 20_000
@@ -40,51 +91,172 @@ object ModelManager {
      */
     private const val READ_TIMEOUT_MS = 30_000
 
-    fun modelFile(context: Context): File =
-        File(context.getExternalFilesDir("models"), MODEL_FILE)
+    /** 应用专属目录；外置存储不可用时退回内部存储（否则模型无处安放）。 */
+    private fun baseDir(context: Context): File =
+        context.getExternalFilesDir("models") ?: File(context.filesDir, "models")
+
+    /** 模型目录。 */
+    fun modelDir(context: Context): File = File(baseDir(context), MODEL_DIR_NAME)
+
+    /** 引擎入口：`config.json` 的绝对路径（`base_dir` 由它推断）。 */
+    fun configPath(context: Context): String =
+        File(modelDir(context), "config.json").absolutePath
+
+    /** 清单里某个文件的目标路径。 */
+    fun fileOf(context: Context, name: String): File = File(modelDir(context), name)
 
     /**
-     * 模型文件完整的最小字节数。Qwen3-1.7B Q4_K_M 约 1223MB。
-     * 与 iOS 端同一套判断：不完整文件被 llama.cpp 用 mmap 加载时访问越界会直接崩（非可捕获异常），
-     * 所以宁可按「长度偏小即视为未下载」处理。
+     * 现有文件的长度与清单不符的项。空表示齐活。
+     *
+     * 只看长度就够：这几个文件在官方仓库里是定长产物，长度对得上就意味着内容完整
+     * （截断、串源、半成品都会体现在长度上）。SHA256 更严格，但 1.2GB 在手机上算一遍
+     * 要好几秒，不划算。
      */
-    private const val MIN_MODEL_BYTES = 1100L * 1024 * 1024
+    fun missingOrMismatched(context: Context): List<ModelFile> =
+        FILES.filter { spec ->
+            val f = File(modelDir(context), spec.name)
+            !f.exists() || f.length() != spec.bytes
+        }
 
-    fun isDownloaded(context: Context): Boolean {
-        val f = modelFile(context)
-        return f.exists() && f.length() > MIN_MODEL_BYTES
+    /** 5 个文件是否都在且长度精确。 */
+    fun isDownloaded(context: Context): Boolean = missingOrMismatched(context).isEmpty()
+
+    /** 已落盘的有效字节数（只统计长度正确的文件），用于「已下载 1.1GB」这类文案。 */
+    fun downloadedBytes(context: Context): Long =
+        FILES.filter { spec ->
+            val f = File(modelDir(context), spec.name)
+            f.exists() && f.length() == spec.bytes
+        }.sumOf { it.bytes }
+
+    /** 人类可读体积（1024 进制，保留一位小数）。 */
+    fun formatSize(bytes: Long): String = when {
+        bytes >= 1L shl 30 -> "%.2fGB".format(bytes.toDouble() / (1L shl 30))
+        bytes >= 1L shl 20 -> "%.1fMB".format(bytes.toDouble() / (1L shl 20))
+        bytes >= 1L shl 10 -> "%.1fKB".format(bytes.toDouble() / (1L shl 10))
+        else -> "${bytes}B"
     }
 
-    /** 删除已下载模型，释放空间。 */
+    /** 诊断文案：缺了哪个、期望多少、实际多少。全齐时返回 null。 */
+    fun verifyMessage(context: Context): String? {
+        val bad = missingOrMismatched(context) ?: return null
+        if (bad.isEmpty()) return null
+        return bad.joinToString("；") { spec ->
+            val f = File(modelDir(context), spec.name)
+            val actual = if (f.exists()) f.length() else -1L
+            "${spec.name} 期望 ${spec.bytes} 字节，实际 ${if (actual < 0) "缺失" else "$actual 字节"}"
+        }
+    }
+
+    /** 删除模型目录（含半成品临时文件），释放空间。 */
     fun delete(context: Context) {
-        val f = modelFile(context)
-        if (f.exists()) f.delete()
-        val tmp = File(f.parentFile, f.name + ".part")
-        if (tmp.exists()) tmp.delete()
+        modelDir(context).deleteRecursively()
+        importDir(context).deleteRecursively()
     }
 
-    /** 从本地流导入已下载好的模型文件（例如用户用电脑下载后拷贝到手机）。 */
+    /** 导入 zip 时的解包暂存目录，跟模型目录同级。 */
+    private fun importDir(context: Context): File =
+        File(baseDir(context), "$MODEL_DIR_NAME.import")
+
+    /**
+     * 从本地流导入模型：接受一个包含上述 5 个文件的 **zip**。
+     *
+     * 换成 zip 的原因很直接：MNN 模型是 5 个文件成套使用，`llm.mnn.weight` 单独就 1.2GB，
+     * 旧的「选一个 GGUF 文件」那套在这里没有对应物，逐个选 5 次既不现实也容易选错版本。
+     *
+     * 流程刻意做成「先全部解到暂存目录 → 逐个核长度 → 全部合格才替换正式目录」：
+     * 中途失败不会把原来能用的模型毁掉。
+     *
+     * @return 模型目录。
+     * @throws Exception 包内找不到清单文件、或文件长度不符时抛出，message 里带明细。
+     */
     fun importFrom(context: Context, input: InputStream): File {
-        val dest = modelFile(context)
-        dest.parentFile?.mkdirs()
-        input.use { it.copyTo(dest.outputStream()) }
+        val staging = importDir(context)
+        staging.deleteRecursively()
+        if (!staging.mkdirs() && !staging.isDirectory) {
+            throw Exception("无法创建解包目录：${staging.absolutePath}")
+        }
+
+        var extracted = 0
+        try {
+            ZipInputStream(BufferedInputStream(input)).use { zip ->
+                while (true) {
+                    val entry = zip.nextEntry ?: break
+                    if (entry.isDirectory) continue
+                    // 允许压缩包里有层级目录：按文件名匹配清单。
+                    val name = entry.name.substringAfterLast('/').substringAfterLast('\\')
+                    val spec = FILES.firstOrNull { it.name == name } ?: continue
+                    File(staging, spec.name).outputStream().use { out -> zip.copyTo(out) }
+                    extracted++
+                }
+            }
+        } catch (e: Exception) {
+            staging.deleteRecursively()
+            throw Exception("解压失败：${e.message}")
+        }
+
+        if (extracted == 0) {
+            staging.deleteRecursively()
+            throw Exception(
+                "压缩包里没有 MNN 模型文件，应包含：" + FILES.joinToString("、") { it.name }
+            )
+        }
+
+        val bad = FILES.filter { spec ->
+            val f = File(staging, spec.name)
+            !f.exists() || f.length() != spec.bytes
+        }
+        if (bad.isNotEmpty()) {
+            val detail = bad.joinToString("；") { spec ->
+                val f = File(staging, spec.name)
+                val actual = if (f.exists()) f.length() else -1L
+                "${spec.name} 期望 ${spec.bytes}，实际 ${if (actual < 0) "缺失" else actual.toString()}"
+            }
+            staging.deleteRecursively()
+            throw Exception("包内文件不完整或不是同一版本：$detail")
+        }
+
+        val dest = modelDir(context)
+        dest.deleteRecursively()
+        if (!dest.mkdirs() && !dest.isDirectory) {
+            staging.deleteRecursively()
+            throw Exception("无法创建模型目录：${dest.absolutePath}")
+        }
+        FILES.forEach { spec ->
+            val from = File(staging, spec.name)
+            val to = File(dest, spec.name)
+            if (!from.renameTo(to)) {
+                from.copyTo(to, overwrite = true)
+                from.delete()
+            }
+        }
+        staging.deleteRecursively()
         return dest
     }
 
     /**
-     * 下载模型到本地。依次尝试所有下载源，任一源失败则换下一个。
-     * 通过 [onProgress] 回调百分比进度（0..100）。
-     * 先写入 .part 临时文件，成功后重命名为正式文件，避免半成品被判为可用。
+     * 下载整套模型到本地。
+     *
+     * 逐文件下载，单文件内部先写 `<名字>.part` 再改名，所以任何时刻磁盘上
+     * 要么是合格文件、要么是会被下次启动清掉的半成品，不存在「半截文件被当成可用」。
+     *
+     * 两个源依次尝试；同一个源内会**跳过已合格的文件**，所以断在第 4 个文件后重试
+     * 只需补 1 个，不必重下 1.2GB。
+     *
+     * @param onProgress 百分比 0..100，按字节总量算（只算清单内的文件）。
      *
      * 可取消：调用方持有协程 Job 并 cancel 即可（见 OnboardingActivity 的「取消」按钮），
      * 取消会立刻断开 socket 并删除 .part 半成品，不会留下垃圾文件。
      */
     suspend fun download(context: Context, onProgress: (Int) -> Unit): File =
         withContext(Dispatchers.IO) {
+            val dir = modelDir(context)
+            if (!dir.mkdirs() && !dir.isDirectory) {
+                throw Exception("无法创建模型目录：${dir.absolutePath}")
+            }
             var lastError: Exception? = null
-            for (url in SOURCES) {
+            for (base in SOURCES) {
                 try {
-                    return@withContext downloadFrom(url, context, onProgress)
+                    return@withContext downloadAll(base, context, onProgress)
                 } catch (e: CancellationException) {
                     throw e // 用户取消：直接冒泡，不要当成失败去试下一个源
                 } catch (e: Exception) {
@@ -94,16 +266,54 @@ object ModelManager {
             throw lastError ?: Exception("下载失败")
         }
 
-    private suspend fun downloadFrom(
-        url: String,
+    private suspend fun downloadAll(
+        baseUrl: String,
         context: Context,
-        onProgress: (Int) -> Unit,
+        onProgress: (Int) -> Unit
     ): File {
-        val dest = modelFile(context)
-        dest.parentFile?.mkdirs()
-        val tmp = File(dest.parentFile, dest.name + ".part")
-        tmp.delete() // 清理上一源留下的半成品
+        // 已完成的部分先算进进度，否则换源重试时进度条会从 0 重来，看着像白干了。
+        var done = downloadedBytes(context)
+        onProgress(((done * 100) / TOTAL_BYTES).toInt().coerceIn(0, 100))
 
+        // 先清掉上一个源留下的半成品，避免和新一轮的 .part 混淆。
+        FILES.forEach { File(modelDir(context), it.name + ".part").delete() }
+
+        for (spec in FILES) {
+            val dest = File(modelDir(context), spec.name)
+            if (dest.exists() && dest.length() == spec.bytes) {
+                continue // 这个文件已经是对的，跳过
+            }
+            val tmp = File(modelDir(context), spec.name + ".part")
+            tmp.delete()
+            downloadOne(baseUrl + spec.name, spec, tmp, done) { copied ->
+                onProgress((((done + copied) * 100) / TOTAL_BYTES).toInt().coerceIn(0, 100))
+            }
+            if (tmp.length() != spec.bytes) {
+                tmp.delete()
+                throw Exception("${spec.name} 长度不符（${tmp.length()} / ${spec.bytes} 字节），已丢弃")
+            }
+            if (!tmp.renameTo(dest)) {
+                tmp.copyTo(dest, overwrite = true)
+                tmp.delete()
+            }
+            done += spec.bytes
+            onProgress(((done * 100) / TOTAL_BYTES).toInt().coerceIn(0, 100))
+        }
+
+        val stillBad = missingOrMismatched(context)
+        if (stillBad.isNotEmpty()) {
+            throw Exception("下载完成但校验未通过：" + stillBad.joinToString("、") { it.name })
+        }
+        return modelDir(context)
+    }
+
+    private suspend fun downloadOne(
+        url: String,
+        spec: ModelFile,
+        tmp: File,
+        alreadyDone: Long,
+        onFileProgress: (Long) -> Unit
+    ) {
         val conn = URL(url).openConnection() as HttpURLConnection
         conn.requestMethod = "GET"
         conn.connectTimeout = CONNECT_TIMEOUT_MS
@@ -122,7 +332,7 @@ object ModelManager {
         try {
             val code = conn.responseCode
             if (code !in 200..299) {
-                throw Exception("下载失败 HTTP $code")
+                throw Exception("${spec.name} 下载失败 HTTP $code")
             }
             expected = conn.contentLengthLong
             conn.inputStream.use { input ->
@@ -134,16 +344,14 @@ object ModelManager {
                         if (n < 0) break
                         output.write(buf, 0, n)
                         copied += n
-                        if (expected > 0) {
-                            onProgress(((copied * 100) / expected).toInt().coerceIn(0, 100))
-                        }
+                        onFileProgress(copied)
                     }
                     output.flush()
                 }
             }
-            // 服务端给了长度就必须收满，否则算断流（半截文件会让 mmap 加载直接崩）
+            // 服务端给了长度就必须收满，否则算断流（半截模型加载时会崩）
             if (expected > 0 && copied != expected) {
-                throw Exception("下载中断（$copied / $expected 字节）")
+                throw Exception("${spec.name} 下载中断（$copied / $expected 字节）")
             }
             completed = true
         } finally {
@@ -151,15 +359,9 @@ object ModelManager {
             conn.disconnect()
             if (!completed) tmp.delete()
         }
-
-        if (tmp.length() <= MIN_MODEL_BYTES) {
-            tmp.delete()
-            throw Exception("下载的文件不完整，请重试")
+        if (spec.bytes != copied) {
+            // 长度对不上就直接失败，别留给上层去猜；服务端内容变了也走这条。
+            throw Exception("${spec.name} 长度不符（收到 $copied，期望 ${spec.bytes} 字节）")
         }
-        if (tmp.renameTo(dest)) return dest
-        // rename 偶发失败时退化为复制
-        tmp.copyTo(dest, overwrite = true)
-        tmp.delete()
-        return dest
     }
 }

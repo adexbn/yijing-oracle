@@ -15,6 +15,23 @@
         android:theme="@style/Theme.Yijing"
         android:usesCleartextTraffic="true">
 
+        <!--
+            OpenCL 后端（MNN 的 libMNN_CL.so）靠 dlopen 在运行时加载系统的 libOpenCL.so，
+            这不是硬依赖（已用 llvm-readelf -d 逐个核对过 jniLibs 里 9 个 .so，没有任何一个
+            NEEDED libOpenCL.so），所以：
+              * required="false" —— 没有 OpenCL 驱动的机器照样能装、能跑（自动退回 CPU）；
+              * Android 12+ 起应用默认访问不到非 NDK 的厂商库，必须在这里显式申请，
+                否则高通 Adreno 机器上 dlopen 会被拦掉，白白退回 CPU。
+
+            位置：必须挂在 <application> 下面（与 <uses-library> 同级），不能放 <manifest> 下。
+            这一点是实测出来的：用本机 build-tools 的 aapt2 单独跑过两种写法，
+            放 <manifest> 下会 `unexpected element <uses-native-library> found in <manifest>`
+            直接链接失败；放 <application> 下才通过。MNN 官方 MnnLlmChat 也是这么写的。
+        -->
+        <uses-native-library
+            android:name="libOpenCL.so"
+            android:required="false" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true">

@@ -3,6 +3,9 @@
 build/
 .kotlin/
 
+# native 构建中间产物（CMake/NDK 生成，体积大且与机器相关）
+.cxx/
+
 # 本机 SDK 路径（每台机器不同，禁止提交）
 local.properties
 

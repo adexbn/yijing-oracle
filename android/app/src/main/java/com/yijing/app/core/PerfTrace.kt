@@ -35,7 +35,7 @@ object PerfTrace {
      *
      * 关掉的理由：每记一条都要拼字符串、写 Logcat、再把整行 append 进文件，
      * 其中好几处还是在主线程上；离线解卦本来就要等几十秒，没必要再为诊断信息付这份成本。
-     * 另外 [attach] 里的 llama `getSystemInfo()` 会连带在冷启动时加载本地库，
+     * 另外 [attach] 里的 MNN 引擎探测会连带在冷启动时加载本地库，
      * 默认关闭后这段开销也一并省掉。
      */
     @Volatile
@@ -91,9 +91,10 @@ object PerfTrace {
         // 补一条开头，后面写进来的阶段才有上下文可对照
         write("", "===== 开启埋点 =====", 0, deviceLine())
         runCatching {
-            val info = dev.ffmpegkit.llama.Llama.getSystemInfo()
-            write("", "llama.cpp system info", 0, info.replace("\n", " | "))
-        }.onFailure { write("", "llama.cpp system info 读取失败", 0, it.message ?: "") }
+            val ver = MnnSession.version()
+            val backend = LocalAiClient.activeBackend ?: "未加载"
+            write("", "MNN 引擎信息", 0, "MNN $ver · backend=$backend")
+        }.onFailure { write("", "MNN 引擎信息读取失败", 0, it.message ?: "") }
     }
 
     fun deviceLine(): String {

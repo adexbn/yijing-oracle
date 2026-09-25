@@ -6,12 +6,40 @@ android {
     namespace = "com.yijing.app"
     compileSdk = 37
 
+    /**
+     * NDK 版本必须固定：native 推理桥（src/main/cpp）要用 NDK 编译。
+     * 本机若没把 NDK 装进 SDK，可在 android/local.properties 里补一行
+     * `ndk.dir=<你的 NDK 绝对路径>` 覆盖；AGP 不会把它提交进仓库。
+     */
+    ndkVersion = "27.2.12479018"
+
     defaultConfig {
         applicationId = "com.yijing.app"
         minSdk = 24
         targetSdk = 34
         versionCode = 4
         versionName = "1.3"
+
+        ndk {
+            // 只打这两个 ABI：jniLibs 里预编译的 MNN 3.6.1 只提供这两套，
+            // 同时也能避免在 x86 模拟器上白编一份用不到的产物。
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
+
+        externalNativeBuild {
+            cmake {
+                // MNN 的 Expr/LLM 头大量使用 C++17 与 RTTI，必须维持默认的
+                // -frtti；-fno-exceptions 也不能加（引擎内部有 throw/catch）。
+                cppFlags += listOf("-std=c++17", "-fexceptions", "-frtti")
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     buildTypes {
@@ -53,8 +81,9 @@ dependencies {
     implementation("androidx.constraintlayout:constraintlayout:2.2.2")
     implementation("cn.6tail:lunar:1.7.7")
 
-    // 本地小模型推理（llama.cpp）
-    implementation("dev.ffmpegkit-maintained:llama-android:0.1.1")
+    // 本地小模型推理：MNN 3.6.1（官方 Android 预编译包，CPU / OpenCL / Vulkan）
+    // 预编译好的 .so 直接放在 src/main/jniLibs/<abi>/，JNI 桥由 src/main/cpp 现场编译，
+    // 因此这里不再需要 llama.cpp 的 AAR。
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
 }

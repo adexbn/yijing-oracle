@@ -194,9 +194,8 @@ class SettingsActivity : AppCompatActivity() {
             return
         }
         modelBtn.isEnabled = true
-        val file = ModelManager.modelFile(this)
         if (ModelManager.isDownloaded(this)) {
-            modelStatus.text = "已下载 · ${formatSize(file.length())}"
+            modelStatus.text = "已下载 · ${formatSize(ModelManager.downloadedBytes(this))}"
             modelBtn.text = "删除模型"
         } else {
             modelStatus.text = "未下载（约 1.2GB，建议在 Wi-Fi 下进行）"
