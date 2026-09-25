@@ -43,14 +43,26 @@ object LocalAiClient {
     /** 基准套件整体结果；[scope] 是 PerfTrace 的会话 id，用来取回整份报告。 */
     data class BenchReport(val scope: String, val rows: List<BenchRow>)
 
-    /** 定稿系统提示词：直白、有对象感、建议具体。 */
-    val SYSTEM = "你是一个会解卦的朋友，说话直白、接地气，像跟人当面聊天，千万不要文绉绉、不要用文言字眼。" +
-        "按这个顺序用大白话讲：1. 先说他抽到的是什么卦，这个卦本身代表什么状态、什么性子（用生活里的话讲）。" +
-        "2. 再说动的那一爻在提醒什么（把爻辞翻译成大白话，讲它对人有什么实际意思）。" +
-        "3. 再说变成的那个卦，点明事情会往哪个方向走。" +
-        "4. 最后紧扣他问的具体问题，给几句实实在在的建议，包括该怎么做、要注意和避免什么。" +
-        "建议要具体到眼下能做的事，别给「积累经验」这类泛泛的话，而且建议的方向要和前面的结论一致，不要自相矛盾。" +
-        "全程用「你」称呼问卦的人，控制在150字以内，像聊天一样自然。"
+    /**
+     * 定稿系统提示词：直白、有对象感、建议具体。
+     *
+     * 2026-09-25 改过一轮：原来写的是「按这个顺序用大白话讲：1. … 2. … 3. … 4. ……，
+     * 控制在150字以内，像聊天一样自然」，真机（小米旗舰）上模型会把这些**要求本身**
+     * 当正文吐出来 —— 答案照抄了 1./2./3./4. 的编号，末尾还逐字贴上
+     * 「（字数控制在150字以内，像聊天一样自然）」（见 [stripThinking] 第 5 步）。
+     * 所以这里把可被照抄的「编号清单 + 括号里的硬指标」改成没有编号的自然叙述，
+     * 并在最后一句显式禁止复述要求。
+     *
+     * iOS 端 `LocalAiClient.swift` 的 `SYSTEM` 必须与本串**逐字相同**，改这里就同步改那边。
+     */
+    val SYSTEM = "你是一个会解卦的朋友，说话直白、接地气，像跟人当面聊天，不要文绉绉、不要用文言字眼。" +
+        "顺着讲三件事：先说他抽到的卦本身是什么状态、什么性子，用生活里的话讲；" +
+        "再说动的那一爻在提醒什么，把爻辞翻成大白话，讲对他实际意味着什么；" +
+        "最后说变成的卦，点明事情会往哪个方向走。" +
+        "结尾紧扣他问的那件事给几句实在建议，包括该怎么做、要注意和避免什么，" +
+        "要具体到眼下能做的事，别给「积累经验」这类泛泛的话，方向也别和前面的结论打架。" +
+        "全程用「你」称呼他，长度控制在百来字，像聊天一样自然。" +
+        "只输出解读本身，不要复述、解释或提到上面这些要求。"
 
     /**
      * 上下文 2048 足够（提示词很短），比原来的 4096 省一半 KV 缓存，也更快。
@@ -541,16 +553,87 @@ object LocalAiClient {
         return BenchReport(scope, rows)
     }
 
-    /** 去掉 Qwen3 的思考过程标签及内容，只保留最终回答。 */
+    /**
+     * 系统提示词里那些「要求」的指纹词。
+     *
+     * 模型偶尔会把自己的指令当正文复述出来 —— 真机截图里答案末尾就整句贴了
+     * 「（字数控制在150字以内，像聊天一样自然）」。见 [dropInstructionEcho]。
+     *
+     * 只收「正常解卦绝不会出现」的词：像「该怎么做」这种正文里真会出现的说法一律不收，
+     * 免得把好端端的解读尾巴切掉。
+     */
+    private val INSTRUCTION_ECHO_SEEDS = listOf(
+        "字数控制", "字以内", "百来字", "像聊天一样", "聊天一样自然",
+        "文绉绉", "积累经验", "自相矛盾", "用「你」称呼", "只输出解读", "不要复述"
+    )
+
+    /**
+     * 剥掉贴在末尾的「系统提示词回音」。
+     *
+     * 只从**末尾**逐句剥，剥到第一句不像回音的句子就停：复述要求一定出现在结尾，
+     * 从尾巴上动手不会误伤正文。
+     */
+    private fun dropInstructionEcho(input: String): String {
+        // 按句切开，并且把句间的空白/换行一起留在本句尾部 —— 直接丢掉会毁掉正文的段落。
+        val sentence = Regex("\\s*[^。！？!?\\n]+[。！？!?]\\s*|\\s*[^。！？!?\\n]+")
+        val parts = sentence.findAll(input.trim()).map { it.value }.toMutableList()
+        while (parts.size > 1) {
+            val last = parts.last()
+            if (last.length <= ECHO_MAX_CHARS && INSTRUCTION_ECHO_SEEDS.any { last.contains(it) }) {
+                parts.removeAt(parts.size - 1)
+            } else {
+                break
+            }
+        }
+        val joined = parts.joinToString("")
+        // 整段输出就是一句回音（模型一个字正文都没写）：返回空串，让 [generate] 的兜底重跑接手。
+        if (joined.length <= ECHO_MAX_CHARS && INSTRUCTION_ECHO_SEEDS.any { joined.contains(it) }) return ""
+        return joined
+    }
+
+    /**
+     * 去掉 Qwen3 的思考过程标签及内容，只保留最终回答。
+     *
+     * 真机（小米旗舰）反馈过「思考过程漏到答案里」，所以这里的清洗比早期版本彻底得多。
+     * 另外 MNN 官方只在**提示词缓存**里做同类清理（`prompt_cache_utils.hpp` 的
+     * `stripThinkBlocks`，只被 `llm.cpp` 的 `updateCachedPromptText` / `syncPromptCache` 调用），
+     * `response()` 吐出来的生成文本它一概不管 —— 生成侧的兜底只能我们自己扛。
+     *
+     * 处理顺序（iOS 端 `LocalAiClient.swift` 的同名函数必须逐条一致）：
+     * 1. 循环删掉成对的思考块（`<think>` / `<thinking>` 混写也认）；
+     * 2. 删掉落单的 `</think>` 闭合标签（模板已含 `<think>` 时，模型只会补一个闭合标签）；
+     * 3. 还有没闭合的开标签，就从那里截断（被 token 上限砍断的思考段）；
+     * 4. 清掉残留的对话模板标记，以及纯文本界面里只会显示成星号的 Markdown 加粗；
+     * 5. 剥掉尾巴上复述系统要求的回音（[dropInstructionEcho]）。
+     */
     fun stripThinking(raw: String): String {
         var s = raw
-        // 移除成对的 <thinking> ... </thinking>
-        s = Regex("(?is)<\\s*think\\s*>.*?</\\s*think\\s*>").replace(s, "")
-        // 思考块未闭合时，从开始标签处截断
-        val open = Regex("(?is)<\\s*think\\s*>").find(s)
-        if (open != null) s = s.substring(0, open.range.first)
-        // 去掉回答标签
-        s = Regex("(?is)<\\s*/?\\s*response\\s*>").replace(s, "")
-        return s.trim()
+
+        // 1) 成对思考块：循环删。早期实现只删第一个，模型吐两段就漏一段。
+        val pair = Regex("(?is)<\\s*think(?:ing)?\\s*>.*?</\\s*think(?:ing)?\\s*>")
+        while (true) {
+            val next = pair.replace(s, "")
+            if (next == s) break
+            s = next
+        }
+
+        // 2) 落单的闭合标签：删标签本身，不要当成截断点（否则会把后面的正文一起丢掉）。
+        s = Regex("(?is)</\\s*think(?:ing)?\\s*>").replace(s, "")
+
+        // 3) 未闭合的开标签：思考段被截断，从这里全砍。
+        Regex("(?is)<\\s*think(?:ing)?\\s*>").find(s)?.let { s = s.substring(0, it.range.first) }
+
+        // 4) 对话模板标记（response 包裹、Qwen 的 <|im_start|> 等）+ Markdown 加粗星号。
+        s = Regex("(?is)<\\s*\\|?\\s*/?\\s*(response|assistant|im_start|im_end|endoftext|im_sep)\\s*\\|?\\s*>")
+            .replace(s, "")
+        // 上面的标签清掉后，模板里的 `<|im_start|>assistant\n` 会剩一个裸露的角色词在开头。
+        s = Regex("(?is)^\\s*(?:assistant|user|system)\\s*\\n").replace(s, "")
+        s = s.replace("**", "")
+
+        // 5) 末尾的系统提示词回音。
+        return dropInstructionEcho(s).trim()
     }
+
+    /** 「回音」单句的长度上限：比这更长就不像复述要求了，宁可不剥。 */
+    private const val ECHO_MAX_CHARS = 60
 }

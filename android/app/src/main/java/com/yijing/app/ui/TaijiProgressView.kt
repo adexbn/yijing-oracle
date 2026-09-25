@@ -203,6 +203,10 @@ class TaijiProgressView @JvmOverloads constructor(
         canvas.drawCircle(cx, cy, r, paint)
 
         // 墨色右半边（-90° 起顺时针 180°，与 iOS 的 addArc(-90, 90, clockwise: false) 同向）
+        // 注意：这里必须先 fill(墨色) 再 drawPath。之前漏了这一句，画笔还停留在上面「纸色底盘」
+        // 的状态，于是右半边被画成了纸色 —— 整体退化成「上面一个墨球 + 白点 + 下面一个小墨点」，
+        // 完全看不出 S 形，就是真机上看到的那个错图。
+        fill(inkColor, alpha)
         halfPath.reset()
         halfPath.addArc(cx - r, cy - r, cx + r, cy + r, -90f, 180f)
         halfPath.close()
