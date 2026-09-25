@@ -139,16 +139,27 @@ class SettingsActivity : AppCompatActivity() {
 
     /**
      * 隐藏的诊断入口：解卦出问题（卡住 / 结果为空 / 明显变慢）时，
-     * 让测试同学打开这里，先把埋点开关点亮，复现一次，再把日志复制或分享回来。
-     * 面板只在第一次点开时构建，之后只是显隐切换，不会重复叠加。
+     * 打开这里复现一次，再把日志复制或分享回来。
+     *
+     * 这里必须「一按就点亮埋点」：埋点默认关闭，之前只展开面板不开埋点，
+     * 用户按了按钮再去解卦，一条日志都没有 —— 看上去就像按钮坏了。
+     * 面板每次打开都重建，报告才是最新的（上次打开后可能又解了一卦）。
      */
     private fun setupDebugSection() {
         val host = findViewById<LinearLayout>(R.id.debugPanelHost)
         findViewById<MaterialButton>(R.id.debugLogBtn).setOnClickListener {
-            if (host.childCount == 0) {
+            val opening = host.visibility != View.VISIBLE
+            if (opening) {
+                if (!PerfTrace.enabled) PerfTrace.setEnabled(true)
+                host.removeAllViews()
                 PerfPanel.attach(this, PerfTrace.lastReport(), host)
+                Toast.makeText(
+                    this,
+                    "埋点已开启 · 现在去解一卦，再回来点「分享日志文件」\n日志文件：${PerfTrace.logFilePath()}",
+                    Toast.LENGTH_LONG
+                ).show()
             }
-            host.visibility = if (host.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+            host.visibility = if (opening) View.VISIBLE else View.GONE
         }
     }
 

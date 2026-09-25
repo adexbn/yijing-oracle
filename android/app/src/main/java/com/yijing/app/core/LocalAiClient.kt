@@ -126,7 +126,10 @@ object LocalAiClient {
      * 线程数变了、或后端变了才重建。[backend] 为 null 表示「自动」，
      * 即按 [PREFERRED_BACKEND] 起、起不来再退 CPU。
      */
-    private class SessionKey(
+    // ⚠️ 必须是 data class：sessionFor 里用 `cachedKey == key` 判命中，
+    // 普通 class 的 == 是引用比较，每次 new 出来的 key 都判不等 —— 缓存永不命中，
+    // 预加载成果会被丢弃、每次解卦白付一次重建（真机实测 324ms + 1635ms ≈ 1.96s）。
+    private data class SessionKey(
         val configPath: String,
         val threads: Int,
         val backend: String?
