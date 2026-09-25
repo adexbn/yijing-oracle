@@ -1,6 +1,7 @@
 package com.yijing.app.core
 
 import android.content.Context
+import org.json.JSONObject
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.InputStream
@@ -17,27 +18,28 @@ import kotlinx.coroutines.withContext
 /**
  * 本地小模型的下载与文件管理。
  *
- * 引擎已从 llama.cpp（单文件 GGUF）换成 MNN（多文件模型目录），所以这里跟着改成
- * 「一个目录 + 5 个文件」的管理方式：
+ * 引擎 = MNN 3.6.1，模型 = Qwen3.5-2B（non-thinking），「一个目录 + 8 个文件」：
  *
  * | 文件 | 字节数 | 作用 |
  * | --- | --- | --- |
- * | `config.json` | 403 | 模型元信息；引擎用它所在目录推断 `base_dir` |
- * | `llm_config.json` | 4881 | MNN 自有配置（隐藏层、层数、jinja 聊天模板、eos） |
- * | `llm.mnn` | 461520 | 计算图结构 |
- * | `tokenizer.txt` | 3193569 | 分词器词表 |
- * | `llm.mnn.weight` | 1231860194 | 权重（占 99.96%） |
+ * | `config.json` | 652 | 模型元信息；引擎用它所在目录推断 `base_dir` |
+ * | `llm_config.json` | 8 692 | MNN 自有配置（隐藏层、层数、jinja 聊天模板、eos） |
+ * | `llm.mnn` | 2 148 136 | LLM 计算图结构 |
+ * | `llm.mnn.json` | 5 344 018 | LLM 额外配置（Qwen3.5 新型号带的文件） |
+ * | `tokenizer.txt` | 6 465 727 | 分词器词表 |
+ * | `visual.mnn` | 488 096 | 视觉编码器计算图（多模态模型必需，纯文本也得加载） |
+ * | `visual.mnn.weight` | 195 587 264 | 视觉编码器权重 |
+ * | `llm.mnn.weight` | 1 176 647 702 | LLM 权重（占 85.3%） |
  *
- * 字节数取自官方仓库的 LFS 元数据（HuggingFace `taobao-mnn/Qwen3-1.7B-MNN` 与
- * ModelScope `MNN/Qwen3-1.7B-MNN` 两边一致），下载后按**精确长度**逐个核对：
- * 少了会崩、多了说明拿到的不是同一份文件，两种都不该放行。
+ * 字节数取自官方仓库的 LFS 元数据（HuggingFace `taobao-mnn/Qwen3.5-2B-MNN`），
+ * 下载后按**精确长度**逐个核对：少了会崩、多了说明拿到的不是同一份文件。
  *
  * 模型不随 APK 打包，首次使用时按需下载到应用专属外部目录，或由用户导入 zip。
  */
 object ModelManager {
 
     /** 模型目录名，放在 `getExternalFilesDir("models")` 下面。 */
-    const val MODEL_DIR_NAME = "qwen3-1.7b-mnn"
+    const val MODEL_DIR_NAME = "qwen3.5-2b-mnn"
 
     /** 模型清单里的一个文件。 */
     data class ModelFile(val name: String, val bytes: Long) {
@@ -47,33 +49,36 @@ object ModelManager {
 
     /**
      * 必需文件清单。顺序刻意「小的在前、大的在后」：
-     * 前 4 个加起来才 3.6MB，先跑完能立刻暴露网络/证书问题，
-     * 不至于让用户等完 1.2GB 才发现根本连不上。
+     * 前 5 个加起来才约 13MB，先跑完能立刻暴露网络/证书问题，
+     * 不至于让用户等完 1.1GB 才发现根本连不上。
      */
     val FILES: List<ModelFile> = listOf(
-        ModelFile("config.json", 403L),
-        ModelFile("llm_config.json", 4881L),
-        ModelFile("llm.mnn", 461_520L),
-        ModelFile("tokenizer.txt", 3_193_569L),
-        ModelFile("llm.mnn.weight", 1_231_860_194L)
+        ModelFile("config.json", 652L),
+        ModelFile("llm_config.json", 8_692L),
+        ModelFile("llm.mnn", 2_148_136L),
+        ModelFile("llm.mnn.json", 5_344_018L),
+        ModelFile("visual.mnn", 488_096L),
+        ModelFile("tokenizer.txt", 6_465_727L),
+        ModelFile("visual.mnn.weight", 195_587_264L),
+        ModelFile("llm.mnn.weight", 1_176_647_702L)
     )
 
-    /** 全套文件的字节数合计（1,235,520,567 B ≈ 1.15 GiB），下载进度按它归一化。 */
+    /** 全套文件的字节数合计（1,386,690,287 B ≈ 1.29 GiB），下载进度按它归一化。 */
     val TOTAL_BYTES: Long = FILES.sumOf { it.bytes }
 
     /**
      * 模型仓库页面（供用户用电脑手动下载）。
-     * 链接给的是**仓库页**而不是某个文件：MNN 模型是 5 个文件成套使用的，
+     * 链接给的是**仓库页**而不是某个文件：MNN 模型是 6 个文件成套使用的，
      * 只下单个文件装不起来。
      */
-    const val MODEL_URL = "https://huggingface.co/taobao-mnn/Qwen3-1.7B-MNN/tree/main"
-    const val MODEL_URL_MIRROR = "https://modelscope.cn/models/MNN/Qwen3-1.7B-MNN/files"
+    const val MODEL_URL = "https://huggingface.co/taobao-mnn/Qwen3.5-2B-MNN/tree/main"
+    const val MODEL_URL_MIRROR = "https://modelscope.cn/models/MNN/Qwen3.5-2B-MNN/files"
 
     /** 两个直连下载源的 URL 前缀，文件名直接拼在后面。 */
     private const val BASE_HF_MIRROR =
-        "https://hf-mirror.com/taobao-mnn/Qwen3-1.7B-MNN/resolve/main/"
+        "https://hf-mirror.com/taobao-mnn/Qwen3.5-2B-MNN/resolve/main/"
     private const val BASE_MODELSCOPE =
-        "https://modelscope.cn/models/MNN/Qwen3-1.7B-MNN/resolve/master/"
+        "https://modelscope.cn/models/MNN/Qwen3.5-2B-MNN/resolve/master/"
 
     /** 下载源顺序：镜像优先，ModelScope 兜底。两个源都已逐文件验证可直连。 */
     val SOURCES = listOf(BASE_HF_MIRROR, BASE_MODELSCOPE)
@@ -111,21 +116,39 @@ object ModelManager {
      * 只看长度就够：这几个文件在官方仓库里是定长产物，长度对得上就意味着内容完整
      * （截断、串源、半成品都会体现在长度上）。SHA256 更严格，但 1.2GB 在手机上算一遍
      * 要好几秒，不划算。
+     *
+     * 例外：`llm_config.json` 如果已经打过运行时补丁（`.llm_config_patched` 标记存在），
+     * 就跳过精确长度检查——补丁会改文件内容，但不影响功能正确性。
      */
-    fun missingOrMismatched(context: Context): List<ModelFile> =
-        FILES.filter { spec ->
-            val f = File(modelDir(context), spec.name)
-            !f.exists() || f.length() != spec.bytes
+    fun missingOrMismatched(context: Context): List<ModelFile> {
+        val patched = File(modelDir(context), ".llm_config_patched").exists()
+        return FILES.filter { spec ->
+            if (patched && spec.name == "llm_config.json") {
+                // 打过补丁：只检查文件存在，不校验长度
+                !File(modelDir(context), spec.name).exists()
+            } else {
+                val f = File(modelDir(context), spec.name)
+                !f.exists() || f.length() != spec.bytes
+            }
         }
+    }
 
     /** 5 个文件是否都在且长度精确。 */
     fun isDownloaded(context: Context): Boolean = missingOrMismatched(context).isEmpty()
 
-    /** 已落盘的有效字节数（只统计长度正确的文件），用于「已下载 1.1GB」这类文案。 */
+    /** 已落盘的有效字节数（只统计长度正确的文件），用于「已下载 1.1GB」这类文案。
+     *
+     * `llm_config.json` 打过补丁后长度会变，这里按清单里的标称长度算，
+     * 避免进度条出现诡异的微小波动。
+     */
     fun downloadedBytes(context: Context): Long =
         FILES.filter { spec ->
             val f = File(modelDir(context), spec.name)
-            f.exists() && f.length() == spec.bytes
+            if (spec.name == "llm_config.json") {
+                f.exists() // 存在就算合格（补丁过的也认）
+            } else {
+                f.exists() && f.length() == spec.bytes
+            }
         }.sumOf { it.bytes }
 
     /** 人类可读体积（1024 进制，保留一位小数）。 */
@@ -151,6 +174,79 @@ object ModelManager {
     fun delete(context: Context) {
         modelDir(context).deleteRecursively()
         importDir(context).deleteRecursively()
+    }
+
+    // ------------------------------------------------------------------ llm_config 补丁
+    /** llm_config.json 补丁版本号。补丁逻辑更新后 +1，App 会自动用 .orig 重新打。 */
+    private const val PATCH_VERSION = 2
+
+    /**
+     * 给 `llm_config.json` 打运行时补丁，确保纯文本推理能跑通。
+     *
+     * Qwen3.5-2B-MNN 是多模态模型（`is_visual=true`、带视觉分支），
+     * 但我们只用纯文本能力。补丁内容：
+     *
+     * 1. `is_visual` → false（禁用视觉分支，MNN 就不去加载 visual.mnn）
+     * 2. 移除 `image_mean` / `image_norm` / `image_size` / `vision_start` /
+     *    `vision_end` / `image_pad` / `num_grid_per_side` / `has_deepstack`
+     *    这些视觉相关字段（避免引擎读到误触发视觉路径）
+     *
+     * 注意：**不要** 改 `is_mrope`。Qwen3.5 的 RoPE 位置编码就是按多模态格式排布权重的，
+     * 硬改成 false 会导致 `Reshape error: 9344 -> 9312`。纯文本推理 mrope 也能正常工作。
+     *
+     * 补丁是幂等的：打过了（且版本一致）就直接返回。原始文件备份成 `llm_config.json.orig`。
+     *
+     * @return true 表示补丁已生效（刚打的或之前打过），false 表示文件不存在或补丁失败
+     */
+    fun ensurePatchedLlmConfig(context: Context): Boolean {
+        val dir = modelDir(context)
+        val configFile = File(dir, "llm_config.json")
+        val backupFile = File(dir, "llm_config.json.orig")
+        val markerFile = File(dir, ".llm_config_patched")
+
+        if (!configFile.exists()) return false
+
+        // 检查补丁版本：版本对不上就从备份恢复，重新打
+        val currentVersion = try {
+            if (markerFile.exists()) markerFile.readText().trim().toIntOrNull() else null
+        } catch (_: Exception) {
+            null
+        }
+        if (currentVersion == PATCH_VERSION) return true
+
+        return try {
+            // 有备份就从备份恢复（保证补丁基于原始文件），没有就用当前文件当原始
+            val sourceFile = if (backupFile.exists()) {
+                backupFile.copyTo(configFile, overwrite = true)
+                backupFile
+            } else {
+                // 第一次打，先备份当前文件
+                configFile.copyTo(backupFile, overwrite = false)
+                configFile
+            }
+
+            val json = JSONObject(sourceFile.readText(Charsets.UTF_8))
+
+            // 1. 关掉视觉分支
+            json.put("is_visual", false)
+
+            // 2. 移除视觉相关字段
+            val visualFields = arrayOf(
+                "image_mean", "image_norm", "image_size",
+                "vision_start", "vision_end", "image_pad",
+                "num_grid_per_side", "has_deepstack"
+            )
+            for (field in visualFields) {
+                json.remove(field)
+            }
+
+            // 3. 写回 + 写版本标记
+            configFile.writeText(json.toString(4), Charsets.UTF_8)
+            markerFile.writeText(PATCH_VERSION.toString(), Charsets.UTF_8)
+            true
+        } catch (e: Exception) {
+            false
+        }
     }
 
     /** 导入 zip 时的解包暂存目录，跟模型目录同级。 */

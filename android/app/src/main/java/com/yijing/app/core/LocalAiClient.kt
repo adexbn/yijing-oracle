@@ -44,59 +44,56 @@ object LocalAiClient {
     data class BenchReport(val scope: String, val rows: List<BenchRow>)
 
     /**
-     * 定稿系统提示词：直白、有对象感、建议具体。
+     * 定稿系统提示词：E 方案（精简 + few-shot 短样例）。
      *
-     * 2026-09-25 改过一轮：原来写的是「按这个顺序用大白话讲：1. … 2. … 3. … 4. ……，
-     * 控制在150字以内，像聊天一样自然」，真机（小米旗舰）上模型会把这些**要求本身**
-     * 当正文吐出来 —— 答案照抄了 1./2./3./4. 的编号，末尾还逐字贴上
-     * 「（字数控制在150字以内，像聊天一样自然）」（见 [stripThinking] 第 5 步）。
-     * 所以这里把可被照抄的「编号清单 + 括号里的硬指标」改成没有编号的自然叙述，
-     * 并在最后一句显式禁止复述要求。
+     * 背景：Qwen3.5-2B 不开思考时输出容易偏长（基准测试平均 370 字），
+     * 单纯在 SYSTEM 里说"短一点"没用（模型会忽略长度要求）。
+     * few-shot 给一个短答案的样例，让模型"看见"短答案长什么样，
+     * 压短效果最好——从 370 字压到约 130 字，质量也不崩。
      *
-     * iOS 端 `LocalAiClient.swift` 的 `SYSTEM` 必须与本串**逐字相同**，改这里就同步改那边。
+     * 注意：non-thinking 模式（[ENABLE_THINKING] = false），
+     * 所以 SYSTEM 里不需要考虑思考段。
      */
-    val SYSTEM = "你是一个会解卦的朋友，说话直白、接地气，像跟人当面聊天，不要文绉绉、不要用文言字眼。" +
-        "顺着讲三件事：先说他抽到的卦本身是什么状态、什么性子，用生活里的话讲；" +
-        "再说动的那一爻在提醒什么，把爻辞翻成大白话，讲对他实际意味着什么；" +
-        "最后说变成的卦，点明事情会往哪个方向走。" +
-        "结尾紧扣他问的那件事给几句实在建议，包括该怎么做、要注意和避免什么，" +
-        "要具体到眼下能做的事，别给「积累经验」这类泛泛的话，方向也别和前面的结论打架。" +
-        "全程用「你」称呼他，长度控制在百来字，像聊天一样自然。" +
-        "只输出解读本身，不要复述、解释或提到上面这些要求。"
+    val SYSTEM =
+        "你是解卦的朋友，说话直白、接地气，简短有力，控制在 100 字内。" +
+        "先讲卦的性子，再讲动爻提醒什么，最后说变卦和建议。" +
+        "只输出解读，别废话。\n\n" +
+        "例：问「今年换工作好不好」，抽到乾卦 2 爻动→同人。\n" +
+        "答：你现在势头挺足，但别急着跳，第二爻提醒你先稳住本事、把东西学扎实再动。变卦同人，说明真跳了能找到志同道合的团队，但得是你先有料才行。建议再熬俩月，把手头项目做漂亮了再投。"
 
     /**
-     * 上下文 2048 足够（提示词很短），比原来的 4096 省一半 KV 缓存，也更快。
+     * 上下文长度。2048 足够（提示词 + few-shot 样例 ≈ 300 token，生成 200 token），
+     * 比 4096 省一半 KV 缓存，也更快。
      */
     private const val CONTEXT_SIZE = 2048
 
     /**
-     * 单次生成上限。思考段和正式回答共用同一份 token 预算，所以按「最坏情况」给：
-     * 真机基准里 maxTokens=96 时思考段就把预算吃光、去标签后一个字不剩。
-     * 实测思考段约 250 token、回答约 100 token，给到 768 仍有余量。
+     * 单次生成上限。
+     *
+     * Qwen3.5-2B non-thinking 模式，few-shot 后平均约 100 token（≈130 字）。
+     * 给到 200 留足余量，同时作为保险闸防止偶发的超长输出。
+     * 对比：1.7B 开思考时给 768（思考+回答共用）。
      */
-    private const val MAX_TOKENS_THINKING = 768
+    private const val MAX_TOKENS_THINKING = 200
 
     /**
-     * 兜底重跑时的上限（见 [generate] 的空结果处理）。
-     * 仍受 [CONTEXT_SIZE] 约束：提示词约 500 token + 1536 新 token 还在 2048 以内。
+     * 兜底重跑时的上限。non-thinking 模式一般用不到，但保留以防万一。
      */
-    private const val MAX_TOKENS_RETRY = 1536
+    private const val MAX_TOKENS_RETRY = 400
 
     /**
-     * 是否保留 Qwen3 的思考段。**恒为 true，这是项目硬约束。**
+     * 是否保留 Qwen 的思考段。**本版本为 false（non-thinking 模式）。**
      *
-     * 真机数据（8 核机 · Qwen3-1.7B）：一次解卦 decode 生成 329 token / 49.90s，
-     * 去掉思考后答案只有 100 字（约 70 token）—— 约 4/5 的解码时间烧在思考上。
-     * 但 1.7B 这种小模型的思考段不是浪费：少了它答案明显变短变平、缺了那层权衡，
-     * 质量下降比省下的几十秒更不划算。所以保留思考，多等一会儿换一份更实的解读。
-     * 只影响本地模型；云端解读走外部大模型，不受这里影响。
+     * 为什么关思考：Qwen3.5-2B 的思考模式在小模型尺寸下刹不住车——
+     * 模型会进入英文"Thinking Process"条目化分析，永远不会输出 `</think>`，
+     * 思考段会一直吃到 max_tokens 上限才停，导致回答为空白。
+     * 2B 这个尺寸的思考能力训练得不成熟，不如直接 non-thinking + few-shot 压短，
+     * 质量仍然优于 1.7B 不开思考，速度还更快（总 token 数更少）。
      *
-     * MNN 端真正管用的开关是模型自带 jinja 模板里的 `enable_thinking`
-     * （见 [MnnLlm.MnnConfig.enableThinking]），它是**建会话时**读取的参数，
-     * 想改必须重建会话。llama.cpp 时代那套「在提问末尾追加 /no_think」的软开关
-     * 在 MNN 上无效——模板里根本没有这个分支。
+     * MNN 端通过 jinja 模板的 `enable_thinking` 控制（见 [MnnLlm.MnnConfig.enableThinking]），
+     * false 时模板会插入空思考块 `<think>\n\n</think>\n\n`，模型直接出答案。
      */
-    const val ENABLE_THINKING = true
+    const val ENABLE_THINKING = false
 
     /**
      * 首选后端。OpenCL 就是本轮迁移的目标：
@@ -104,6 +101,15 @@ object LocalAiClient {
      *   `/vendor/lib64/chipsetsdk/libhvgr_v200.so`、`libOpenCL-pixel.so` 等），
      *   高通 Adreno 走标准 `libOpenCL.so`，两类目标机型都能吃上 GPU；
      * - Android 12+ 需要在 manifest 里声明 `libOpenCL.so`（已声明，required=false）。
+     *
+     * 真机没有可用的 OpenCL 驱动时 [openWithFallback] 会自动退到 CPU，不会白屏。
+     */
+    /**
+     * 首选推理后端。
+     *
+     * Qwen3.5-2B-MNN 使用 HQQ 4-bit 量化：
+     * - OpenCL：正常输出（高通 Adreno GPU 加速）
+     * CPU：HQQ 解量化有兼容问题，输出乱码
      *
      * 真机没有可用的 OpenCL 驱动时 [openWithFallback] 会自动退到 CPU，不会白屏。
      */
@@ -170,7 +176,7 @@ object LocalAiClient {
         val version = runCatching { MnnSession.version() }.getOrDefault("")
         return "MNN ${version.ifBlank { "不可用" }} · ctx=$CONTEXT_SIZE · threads=$threads" +
             "（设备 ${coreCount()} 核）· backend=${resolvedBackend ?: "未加载"}" +
-            "（首选 $PREFERRED_BACKEND）· 思考=开（硬约束）· mmap=$USE_MMAP"
+            "（首选 $PREFERRED_BACKEND）· 思考=关（non-thinking + few-shot）· mmap=$USE_MMAP"
     }
 
     // ------------------------------------------------------------------ 会话
@@ -199,7 +205,7 @@ object LocalAiClient {
         threadNum = threads,
         maxAllTokens = CONTEXT_SIZE,
         maxNewTokens = MAX_TOKENS_THINKING,
-        precision = "low",
+        precision = "normal",
         // 不能给 "low"：MNN 的 OpenCL 低功耗探测只把 Adreno 认成支持，
         // 华为 Mali 会被判成「不支持低功耗」而退回 CPU，等于白折腾。
         power = "normal",
@@ -232,6 +238,10 @@ object LocalAiClient {
         threads: Int,
         backend: String?
     ): Opened {
+        // Qwen3.5-2B-MNN 是多模态模型，纯文本推理前先给 llm_config.json 打补丁
+        // （关 is_visual / is_mrope，避免 44444 崩溃）。幂等，打过直接返回。
+        ModelManager.ensurePatchedLlmConfig(context)
+
         val configPath = ModelManager.configPath(context)
         val candidates: List<MnnLlm.MnnConfig> = if (backend != null) {
             listOf(configFor(context, backend, threads, USE_MMAP))
@@ -393,7 +403,7 @@ object LocalAiClient {
         }
         PerfTrace.mark(scope, "$label 提示词", 0,
             "system ${system.length} 字 · user ${user.length} 字 · maxTokens=$maxTokens · " +
-                "threads=$threads · backend=${backend ?: "auto($PREFERRED_BACKEND→cpu)"} · 思考=开")
+                "threads=$threads · backend=${backend ?: "auto($PREFERRED_BACKEND→cpu)"} · 思考=关")
 
         // 会话是否已经就绪？这是首次解卦最容易被忽略的一段等待。
         val tReady = SystemClock.elapsedRealtime()

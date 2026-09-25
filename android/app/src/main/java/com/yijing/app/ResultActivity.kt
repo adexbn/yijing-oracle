@@ -62,18 +62,7 @@ class ResultActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.origBaihua).text =
             "白话　${GuaciBaihua.of(result.original.number)}"
 
-        // 变卦区
-        findViewById<TextView>(R.id.changedName).text =
-            "第${result.changed.number}卦 · ${result.changed.name}（${result.changed.alias}）"
-        findViewById<TextView>(R.id.changedUnicode).text = result.changed.unicodeSymbol.toString()
-        findViewById<TextView>(R.id.changedXiangyi).text =
-            "象义　${XiangYi.of(result.changed.number)}"
-        findViewById<TextView>(R.id.changedJudgment).text =
-            "卦辞　${result.changed.judgment}"
-        findViewById<TextView>(R.id.changedBaihua).text =
-            "白话　${GuaciBaihua.of(result.changed.number)}"
-
-        // 动爻区：爻辞 + 白话（已并入本卦卡）
+        // 动爻区：爻辞 + 白话（并入本卦卡）
         val yaoLabel = findViewById<TextView>(R.id.yaoLabel)
         val yaoText = findViewById<TextView>(R.id.yaoText)
         val yaoBaihua = findViewById<TextView>(R.id.yaoBaihua)
@@ -88,6 +77,17 @@ class ResultActivity : AppCompatActivity() {
             yaoBaihua.visibility = View.GONE
         }
 
+        // 变卦区
+        findViewById<TextView>(R.id.changedName).text =
+            "第${result.changed.number}卦 · ${result.changed.name}（${result.changed.alias}）"
+        findViewById<TextView>(R.id.changedUnicode).text = result.changed.unicodeSymbol.toString()
+        findViewById<TextView>(R.id.changedXiangyi).text =
+            "象义　${XiangYi.of(result.changed.number)}"
+        findViewById<TextView>(R.id.changedJudgment).text =
+            "卦辞　${result.changed.judgment}"
+        findViewById<TextView>(R.id.changedBaihua).text =
+            "白话　${GuaciBaihua.of(result.changed.number)}"
+
         // 提问卡
         val questionCard = findViewById<View>(R.id.questionCard)
         if (question.isNotBlank()) {
@@ -97,7 +97,7 @@ class ResultActivity : AppCompatActivity() {
             questionCard.visibility = View.GONE
         }
 
-        // 解读：结果已在等待页算好，这里只负责展示
+        // 解读
         val genericCard = findViewById<View>(R.id.genericCard)
         if (question.isBlank()) {
             genericCard.visibility = View.VISIBLE
@@ -125,8 +125,5 @@ class ResultActivity : AppCompatActivity() {
                 hintTv.visibility = View.GONE
             }
         }
-
-        // 诊断面板不再挂在结果页（普通用户不该看到），
-        // 统一挪到隐藏的设置页「日志与诊断」里，见 SettingsActivity.setupDebugSection。
     }
 }

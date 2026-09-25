@@ -248,7 +248,6 @@ object MnnLlm {
             maxNewTokens < 1 -> "maxNewTokens 必须 >= 1，当前 $maxNewTokens"
             backend != BACKEND_CPU && tmpPath.isBlank() ->
                 "非 CPU 后端（$backend）必须给 tmpPath，引擎要在里面落 mnn_cachefile.bin"
-            !enableThinking -> "enableThinking 必须为 true：关闭思考会显著拉低解卦质量"
             else -> null
         }
     }

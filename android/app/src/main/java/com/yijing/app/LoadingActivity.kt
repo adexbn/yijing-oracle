@@ -17,10 +17,7 @@ import kotlinx.coroutines.withContext
 
 /**
  * 起卦等待页：卦象在点击起卦时已经算出，但本地/云端解读耗时较长。
- * 先在此等待解读完成，再带着完整结果进入结果页，避免"半成品先展示、再慢慢填满"。
- *
- * debug 包里这里也是性能观测点：整条链路（进页面 → 查表拼提示词 → 推理 → 跳转）
- * 都会写进 PerfTrace，供结果页的调试面板显示。
+ * 先在此等待解读完成，再带着完整结果进入结果页。
  */
 class LoadingActivity : AppCompatActivity() {
 
