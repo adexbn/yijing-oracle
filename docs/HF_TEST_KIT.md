@@ -32,11 +32,32 @@
 | **现役：原始权重** | https://huggingface.co/Qwen/Qwen3-1.7B |
 | 现役：Android 用的 MNN | https://huggingface.co/taobao-mnn/Qwen3-1.7B-MNN |
 | 现役：iOS 用的 GGUF（Q4_K_M） | https://huggingface.co/lmstudio-community/Qwen3-1.7B-GGUF |
-| **浏览器直接试候选（免装环境）** | https://huggingface.co/spaces/webml-community/Qwen3.5-WebGPU |
-| **浏览器直接试现役（免装环境）** | https://huggingface.co/spaces/webml-community/qwen3-webgpu （模型下拉里选 1.7B） |
+| 浏览器试**候选 2B**（免装环境） | https://huggingface.co/spaces/webml-community/Qwen3.5-WebGPU （含 0.8B / 2B / 4B 三档） |
+| 浏览器试**现役 1.7B**（免装环境） | ❌ 没有现成的官方 Space，见下方 1.2.1 |
 
 > 名称口径：`Qwen3.5-2B` 就是官方 Instruct 版（Qwen3.5 起不再单独后缀 `-Instruct`）。
 > 官方标注 `image-text-to-text`（原生多模态），本项目只用它的文本能力。
+
+#### 1.2.1 关于「模型页右侧没有 Chat」（2026-09-25 实测 API）
+
+**不是账号问题、不是网络问题、不是被限流。** HF 只在模型挂了可用推理服务（Inference Provider）
+时才在模型页右侧渲染 Chat 挂件。实测结果：
+
+| 模型 | disabled | gated | `inferenceProviderMapping` | 模型页有 Chat？ |
+| --- | --- | --- | --- | --- |
+| `Qwen/Qwen3.5-2B` | false | false | 只有 `featherless-ai`（第三方） | ❌ 没有 |
+| `Qwen/Qwen3-1.7B` | false | false | 只有 `featherless-ai`（第三方） | ❌ 没有 |
+
+两者都没挂官方 Serverless Inference（tags 里也没有 `text-generation-inference`），所以模型页不出现 Chat 框。
+想用网页聊只能走 Space：
+
+- **候选 2B 可以**：`webml-community/Qwen3.5-WebGPU` —— 实测 `runtime.stage: RUNNING`，浏览器本地跑，覆盖 0.8B / 2B / 4B。
+- **现役 1.7B 不行**：没有现成官方 Space。同组织的 `webml-community/qwen3-webgpu` 实测只挂了
+  `onnx-community/Qwen3-0.6B-ONNX`（**只有 0.6B，不含 1.7B**），不能拿来测现役；
+  1.7B 的浏览器权重 `onnx-community/Qwen3-1.7B-ONNX` 确实存在，但官方没给它开 Space，
+  搜 `Qwen3-1.7B` 出来的全是个人 demo（点赞最高 2），不建议依赖。
+
+> 结论：**2B 能在网页上试，1.7B 不能**。想严格对照，走第 2 节表格最后两行（本地 Ollama / 本地 Transformers）。
 
 ### 1.3 体积对照（字节数取自仓库 LFS 元数据，已核对）
 
@@ -57,13 +78,15 @@
 
 | 方式 | 入口 | 能否开思考 | 能否设采样参数 | 适合 |
 | --- | --- | --- | --- | --- |
-| 模型页右侧 Chat 框 | 模型页点 `Chat` | 需在消息里带 `/think` | ❌ 用服务端默认 | 快速摸脾气 |
-| WebGPU Space（浏览器本地跑） | 第 1.2 节那两条 Space | 需 `/think` | ❌ 一般不可调 | 手上没环境时的首选 |
+| 模型页右侧 Chat 框 | 模型页点 `Chat` | 需在消息里带 `/think` | ❌ 用服务端默认 | ⚠️ **这两个模型当前都没有**，见 1.2.1 |
+| WebGPU Space（浏览器本地跑） | 见 1.2.1（只有 2B 那个可用） | 需 `/think` | ❌ 一般不可调 | 手上没环境时的首选 |
 | 本地 Ollama | `ollama run qwen3.5:2b` / `ollama run qwen3:1.7b` | 可控 | ✅ 全参数可设 | 想省事又不将就 |
 | HuggingFace Transformers 本地 | 直接加载两个模型 | ✅ `enable_thinking=True` | ✅ 全参数可设 | **唯一能严格复现 App 的路** |
 
 > 要**严格复现 App 行为**（思考必须开、参数必须一致），只有本地 `transformers` / `llama.cpp` 两条路；
-> HF 网页 Chat 与 Space 只能做**粗筛**（看语气、看长文指令跟随、看是否会复读系统提示词）。
+> 网页 Space 只能做**粗筛**（看语气、看长文指令跟随、看是否会复读系统提示词）——
+> 而且网页侧**设不了 `presence_penalty`**，候选 `Qwen3.5-2B` 的思考档却要求 `presence_penalty 1.5`，
+> 这一项差异会直接混进对比结论，跨端数字不可比。
 
 ## 3. 采样参数（两侧都要按各自官方值，不要统一）
 
@@ -414,7 +437,9 @@ E 批 = 新闻文本 50 条 + 招聘 JD 50 条，gold 全部为 `invalid`。
 
 ## 12. 已知坑（别踩）
 
-- **HF 网页 Chat 不能设 `presence_penalty` / `temperature`** ⇒ 网页结论只能当粗筛，最终判定要本地跑。
+- **HF 模型页右侧没有 Chat 框** ⇒ `Qwen/Qwen3.5-2B` 与 `Qwen/Qwen3-1.7B` 都没挂官方 Serverless Inference，
+  模型页不渲染 Chat 挂件；网页侧只能走 Space（只有 2B 有），详见 1.2.1。
+- **网页侧不能设 `presence_penalty` / `temperature`** ⇒ 网页结论只能当粗筛，最终判定要本地跑。
 - **Qwen3.5-2B 默认 non-thinking** ⇒ 不加 `/think`（或 `enable_thinking=True`）测出来的必然比现役差，属于测错。
 - **两侧参数不能统一** ⇒ Qwen3.5 思考档要 `temp 1.0 + presence_penalty 1.5`，用 0.6 会明显退化。
 - **跨端口径不可比** ⇒ 已知 iOS 输出上限 320（v1.2.0 时期）与 Android 768 不同，历史上「iOS 更强」是上限差造成的假象；这次对比要在同参数同上限下做。
