@@ -35,6 +35,16 @@ enum LocalAiClient {
         return (SYSTEM, user)
     }
 
+    /// 单次生成上限。思考段和正式回答**共用**同一份 token 预算，所以按「最坏情况」给：
+    /// 真机基准里预算太小的时候，思考段就把钱花光了、去标签后一个字不剩。
+    /// 与 Android 端 `MAX_TOKENS_THINKING` 取齐；仍受 `n_ctx=2048` 约束（提示词约 333 token）。
+    private static let maxTokensThinking: Int32 = 768
+
+    /// 兜底重跑时的上限。真出现上面那种情况时，模型其实还没开始写答案就被截断了 ——
+    /// 与其给用户一张空白解读，不如把预算加大再跑一轮，宁可多等一轮。
+    /// 333（提示词）+ 1536 = 1869 < 2048，仍在上下文窗口内。
+    private static let maxTokensRetry: Int32 = 1536
+
     /// 使用本地模型生成解读。模型未下载或不完整时抛出带提示的异常。
     static func generate(system: String, user: String) async throws -> String {
         YjLog.log("LocalAiClient.generate 开始")
@@ -52,16 +62,49 @@ enum LocalAiClient {
         return try await withCheckedThrowingContinuation { cont in
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
-                    YjLog.log("开始调用 LlamaCPP.complete")
-                    let raw = try LlamaCPP.complete(modelPath: path, system: system, user: user)
-                    YjLog.log("LlamaCPP.complete 返回成功，raw 长度 \(raw.utf8.count)")
-                    cont.resume(returning: stripThinking(raw))
+                    YjLog.log("开始调用 LlamaCPP.complete（maxTokens=\(maxTokensThinking)）")
+                    let first = try LlamaCPP.complete(
+                        modelPath: path, system: system, user: user, maxTokens: maxTokensThinking
+                    )
+                    logThinkingOf(first)
+                    var text = stripThinking(first)
+                    YjLog.log("后处理：原始 \(first.utf8.count) 字节 → 去思考标签后 \(text.utf8.count) 字节")
+
+                    // 兜底：思考段把预算吃光时，答案一个字都没来得及写，去标签后就是空白。
+                    // 不能靠「关思考」绕（关思考是硬约束禁止的），改成加大预算重跑。
+                    if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        YjLog.log("空结果兜底：思考段吃光 \(maxTokensThinking) token、答案被截断，预算提到 \(maxTokensRetry) 重跑一次")
+                        let second = try LlamaCPP.complete(
+                            modelPath: path, system: system, user: user, maxTokens: maxTokensRetry
+                        )
+                        logThinkingOf(second)
+                        text = stripThinking(second)
+                        YjLog.log("空结果兜底：重跑后得到 \(text.utf8.count) 字节")
+                    }
+                    cont.resume(returning: text)
                 } catch {
                     YjLog.log("LlamaCPP.complete 抛出错误: \(error)")
                     cont.resume(throwing: error)
                 }
             }
         }
+    }
+
+    /// 量一下思考块里**到底有没有内容**，再记日志。
+    ///
+    /// 只检查有没有 `<think>` 标签是假阳性：模板补了空思考块时模型照样会吐一个空壳
+    /// `<think></think>`，那不叫在思考（这正是 1.2.0 日志里「看着像思考、其实是纯答案」的原因）。
+    /// 所以这里量的是标签之间的字符数，未闭合的块也算 —— 被 token 上限砍断的思考段就是这种。
+    private static func logThinkingOf(_ raw: String) {
+        guard let re = try? NSRegularExpression(
+            pattern: "(?is)<\\s*think(?:ing)?\\s*>(.*?)(</\\s*think(?:ing)?\\s*>|$)"
+        ) else { return }
+        let full = NSRange(raw.startIndex..<raw.endIndex, in: raw)
+        let chars = re.matches(in: raw, range: full).reduce(0) { acc, m -> Int in
+            guard m.numberOfRanges > 1, let r = Range(m.range(at: 1), in: raw) else { return acc }
+            return acc + String(raw[r]).trimmingCharacters(in: .whitespacesAndNewlines).count
+        }
+        YjLog.log("思考段：\(chars) 字" + (chars > 0 ? "（保留思考是硬约束）" : "（无思考内容，需检查模板是否漏配）"))
     }
 
     /// 系统提示词里那些「要求」的指纹词。

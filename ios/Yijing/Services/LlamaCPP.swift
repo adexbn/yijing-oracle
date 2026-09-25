@@ -208,10 +208,20 @@ private enum LlamaRuntime {
 
 enum LlamaCPP {
 
+    /// 是否保留 Qwen3 的思考段。**恒为 true —— 这是项目硬约束**（原因见 `applyChatTemplate`）。
+    ///
+    /// 2026-09-25 修正：以前这个开关并不存在 —— `applyChatTemplate` 末尾无条件拼了空思考块，
+    /// 真机日志里 `STEP 8: 输出预览` 两次都是纯答案、全文搜不到 `think`，
+    /// 等于 iOS 一直在跑**非思考模式**，和硬约束正好相反。
+    /// 现在由本开关单点控制，采样参数也跟着这套推荐值成套切换。
+    static let enableThinking = true
+
     /// 生成一次回复。并发调用会被串行化（同一时刻只跑一次推理）。
-    /// maxTokens 默认 320：系统提示词要求「150 字以内」，中文约 1 字 1 token，
-    /// 320 足够覆盖，同时把「模型不吐结束符」时的最坏耗时压掉约四成（原为 512）。
-    static func complete(modelPath: String, system: String, user: String, maxTokens: Int32 = 320) throws -> String {
+    ///
+    /// maxTokens 默认 768：思考段与正式答案**共用**同一份 token 预算，必须按最坏情况给。
+    /// 真机基准里预算给 320 左右时思考段就把钱花光了、去标签后一个字不剩。
+    /// 与 Android 端 `LocalAiClient.MAX_TOKENS_THINKING` 取齐。
+    static func complete(modelPath: String, system: String, user: String, maxTokens: Int32 = 768) throws -> String {
         // 先把 llama.cpp 的日志接到文件日志，加载失败时能拿到底层原因。
         llama_log_set(llamaLogCallback, nil)
         // GGML_ASSERT 断言失败时走 ggml_abort，默认只 fprintf(stderr) 不进 llama 日志回调；
@@ -271,11 +281,18 @@ enum LlamaCPP {
         let tokens = try tokenize(vocab, text: prompt)
         if tokens.isEmpty { throw LlamaError.tokenizeFailed }
         YjLog.log("STEP 5: 分词 OK, tokens=\(tokens.count)（含 ChatML 标记与 assistant 引导）")
+        // 留一条能一眼验证「到底思考没思考」的日志：模板不补空思考块才是开启思考。
+        YjLog.log("STEP 5: 思考模式 = " + (enableThinking ? "开启（模板不补空思考块，模型会自己开 <think> 段）" : "关闭（模板补了空思考块）"))
         phaseDone("分词", extra: "\(tokens.count) tokens")
 
         let eos = llama_vocab_eos(vocab)
-        // 采样链：top_k 20 → top_p 0.8 → temp 0.7 → dist，采用 Qwen3 官方推荐的非思考模式参数。
-        // 之前只用贪心（greedy），小模型极易陷入「复读」退化（实测输出 1024 个「！」）。
+        // 采样链：top_k 20 → top_p → temp → dist。Qwen 官方给的推荐值是**成套**的，必须跟着思考模式走：
+        //   思考模式：Temperature=0.6, TopP=0.95, TopK=20, MinP=0
+        //   非思考模式：Temperature=0.7, TopP=0.8, TopK=20, MinP=0
+        // 用错套会实打实变差：思考段用 0.7/0.8 会啰嗦发散，答案用 0.6/0.95 容易跑题。
+        // 官方同时明确「不要用贪心解码」，小模型会陷入复读退化（旧日志里连续 1024 个「！」就是这么来的）。
+        let temperature: Float = enableThinking ? 0.6 : 0.7
+        let topP: Float = enableThinking ? 0.95 : 0.8
         let seed = UInt32.random(in: 1...UInt32.max)
         let sparams = llama_sampler_chain_default_params()
         guard let smpl = llama_sampler_chain_init(sparams) else {
@@ -283,11 +300,11 @@ enum LlamaCPP {
             throw LlamaError.contextFailed
         }
         llama_sampler_chain_add(smpl, llama_sampler_init_top_k(20))
-        llama_sampler_chain_add(smpl, llama_sampler_init_top_p(0.8, 1))
-        llama_sampler_chain_add(smpl, llama_sampler_init_temp(0.7))
+        llama_sampler_chain_add(smpl, llama_sampler_init_top_p(topP, 1))
+        llama_sampler_chain_add(smpl, llama_sampler_init_temp(temperature))
         llama_sampler_chain_add(smpl, llama_sampler_init_dist(seed))
         defer { llama_sampler_free(smpl) }
-        YjLog.log("STEP 5: 采样参数 top_k=20, top_p=0.8, temp=0.7, seed=\(seed)")
+        YjLog.log("STEP 5: 采样参数 top_k=20, top_p=\(topP), temp=\(temperature), maxTokens=\(maxTokens), seed=\(seed)")
 
         // 分批喂入 prompt：llama_decode 单次最多处理 n_batch（本例 256）个 token。
         // 一次性全量喂入会触发 llama-context.cpp 的
@@ -407,19 +424,26 @@ enum LlamaCPP {
     /// 而是顺着这段文字当文章续写 —— 既不会输出 <|im_end|>（导致永远不触发 EOS，一直生成到上限），
     /// 又极易退化成一串「！」之类无意义字符（实测连续 1024 个 token 全是感叹号）。
     ///
-    /// 末尾的「空的思考块」是 Qwen3 tokenizer_config.json 里 chat_template 对
-    /// enable_thinking=false 的官方写法：
+    /// `<|im_start|>assistant` 后面要不要补一个「空的思考块」，直接决定模型思不思考 ——
+    /// 这就是 Qwen3 tokenizer_config.json 里 chat_template 的**唯一分支**：
     ///     {{- '<|im_start|>assistant\n' }}
     ///     {%- if enable_thinking is defined and enable_thinking is false %}
     ///         {{- '<think>\n\n</think>\n\n' }}
     ///     {%- endif %}
-    /// 即开头就写一个「已经结束的空思考块」，让模型跳过思考直接作答。
-    /// 注意必须带上收尾的 </think>，只写 <think> 会把模型留在思考块里、继续生成大段内心戏。
+    /// 补上（等价 enable_thinking=false）：开头已经是「结束了的空思考块」，模型直接作答。
+    /// 不补（等价 enable_thinking=true）：模型自己开 <think> 段，权衡完再答。
+    ///
+    /// 本项目按硬约束走**开启思考**（`enableThinking = true`）。
+    /// 注意「只写 `<think>` 不写 `</think>`」是错的：那会把模型关在思考块里无尽写内心戏，
+    /// 永远等不到正文。要开就整个不补，要关就整块补全。
     private static func applyChatTemplate(system: String, user: String) -> String {
         var p = ""
         p += "<|im_start|>system\n" + system + "<|im_end|>\n"
         p += "<|im_start|>user\n" + user + "<|im_end|>\n"
-        p += "<|im_start|>assistant\n" + "<think>\n\n</think>\n\n"
+        p += "<|im_start|>assistant\n"
+        if !enableThinking {
+            p += "<think>\n\n</think>\n\n"
+        }
         return p
     }
 

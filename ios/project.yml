@@ -43,8 +43,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.yijing.app
         SWIFT_VERSION: "5.0"
-        MARKETING_VERSION: "1.2.0"
-        CURRENT_PROJECT_VERSION: "7"
+        MARKETING_VERSION: "1.3.0"
+        CURRENT_PROJECT_VERSION: "8"
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1"
         # 之前这里是空字符串，等于告诉编译器「本 App 没有图标资源」，
