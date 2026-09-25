@@ -205,7 +205,7 @@ object LocalAiClient {
         threadNum = threads,
         maxAllTokens = CONTEXT_SIZE,
         maxNewTokens = MAX_TOKENS_THINKING,
-        precision = "normal",
+        precision = "low",
         // 不能给 "low"：MNN 的 OpenCL 低功耗探测只把 Adreno 认成支持，
         // 华为 Mali 会被判成「不支持低功耗」而退回 CPU，等于白折腾。
         power = "normal",
